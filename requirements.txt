@@ -1,0 +1,12 @@
+mcp
+chromadb
+flashrank
+rank_bm25
+numpy
+langchain-text-splitters
+anthropic
+fastapi
+uvicorn
+tenacity
+pytest
+pytest-asyncio

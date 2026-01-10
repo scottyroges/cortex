@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+venv
+env
+*.egg-info
+.eggs
+dist
+build
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Tests (optional - can include for testing in container)
+# tests/
+
+# Local data
+cortex_db/
+*.db
+*.sqlite
+
+# Claude
+.claude
+
+# Misc
+.DS_Store
+*.log
