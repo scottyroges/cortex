@@ -192,9 +192,8 @@ If you see repeated "iTerm wants to access data from other applications" popups 
 1. Open **System Settings → Privacy & Security → Full Disk Access**
 2. Add these applications:
    - **iTerm** (or your terminal app)
-   - **Docker** (or Docker Desktop)
 
-This allows the Docker build process to access the Cortex source directory without triggering macOS TCC (Transparency, Consent, and Control) prompts.
+This allows the iTerm build process to access the Cortex source directory without triggering macOS TCC (Transparency, Consent, and Control) prompts.
 
 ## Development
 

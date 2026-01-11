@@ -61,7 +61,7 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 ---
 
-## Phase 2: Staff Polish (Workflow Integration) ⬜
+## Phase 2: Working Memory (Workflow Integration) ⬜
 
 *Goal: Deep integration into daily workflow. Solves "Long Running Projects" and "External Research."*
 
