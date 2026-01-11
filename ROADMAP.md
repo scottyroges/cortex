@@ -51,6 +51,16 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 |---------|-------------|--------|
 | Custom `CLAUDE.md` | Guide Claude on Cortex usage - when to search, commit, save notes | ⬜ |
 
+### Initiative Management
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| `list_initiatives` | List all initiatives (active, completed, paused) with last updated timestamps | ⬜ |
+| `resume_initiative` | Resume a previous initiative by ID/name, restore context | ⬜ |
+| `complete_initiative` | Mark initiative as done, archive with summary | ⬜ |
+| `pause_initiative` | Pause current work, save state for later | ⬜ |
+| Initiative History | Track initiative lifecycle: created → active → paused → completed | ⬜ |
+
 ### Performance & UX
 
 | Feature | Description | Status |
