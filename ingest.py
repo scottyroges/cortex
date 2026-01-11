@@ -3,15 +3,18 @@ Cortex Ingestion Engine
 
 Handles:
 - File walking with gitignore-style patterns
-- MD5 hash-based delta sync
+- Git-based delta sync (with MD5 fallback for non-git repos)
 - AST-aware code chunking
 - Contextual header generation via Claude Haiku
+- Garbage collection for deleted/renamed files
 """
 
 import hashlib
 import json
 import os
+import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator, Optional
 
@@ -139,16 +142,209 @@ def load_state(state_file: Optional[str] = None) -> dict[str, str]:
     return {}
 
 
-def save_state(state: dict[str, str], state_file: Optional[str] = None) -> None:
-    """Save the ingestion state to disk."""
+def save_state(state: dict[str, Any], state_file: Optional[str] = None) -> None:
+    """Save the ingestion state to disk atomically."""
+    import shutil
+    import tempfile
+
     path = state_file or STATE_FILE
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(state, f, indent=2)
+
+    # Atomic write: write to temp file, then rename
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=2)
+        shutil.move(tmp_path, path)  # Atomic on POSIX
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+# --- Git Integration ---
+
+
+def is_git_repo(path: str) -> bool:
+    """Check if the given path is inside a git repository."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def get_head_commit(path: str) -> Optional[str]:
+    """Get the current HEAD commit hash."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def get_git_changed_files(
+    path: str,
+    since_commit: Optional[str],
+) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+    """
+    Get files changed since a commit using git.
+
+    Args:
+        path: Repository root path
+        since_commit: Commit to compare against (None = all files)
+
+    Returns:
+        Tuple of (modified_files, deleted_files, renamed_files)
+        - modified_files: Files that were added or modified
+        - deleted_files: Files that were deleted
+        - renamed_files: List of (old_path, new_path) tuples
+    """
+    if not since_commit:
+        return [], [], []
+
+    try:
+        # Get file status with rename detection
+        result = subprocess.run(
+            ["git", "diff", "--name-status", "-M", since_commit, "HEAD"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            logger.warning(f"git diff failed: {result.stderr}")
+            return [], [], []
+
+        modified = []
+        deleted = []
+        renamed = []
+
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+
+            parts = line.split("\t")
+            status = parts[0]
+
+            if status.startswith("R"):
+                # Rename: R100\told_path\tnew_path
+                if len(parts) >= 3:
+                    old_path = os.path.join(path, parts[1])
+                    new_path = os.path.join(path, parts[2])
+                    renamed.append((old_path, new_path))
+                    modified.append(new_path)  # Also index the new location
+            elif status == "D":
+                # Deleted
+                deleted.append(os.path.join(path, parts[1]))
+            elif status in ("A", "M", "T"):
+                # Added, Modified, or Type changed
+                modified.append(os.path.join(path, parts[1]))
+
+        return modified, deleted, renamed
+
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"git command failed: {e}")
+        return [], [], []
+
+
+def get_untracked_files(path: str) -> list[str]:
+    """Get untracked files that should be indexed."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            return [
+                os.path.join(path, f)
+                for f in result.stdout.strip().split("\n")
+                if f
+            ]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return []
+
+
+# --- Garbage Collection ---
+
+
+def delete_file_chunks(
+    collection: chromadb.Collection,
+    file_paths: list[str],
+    project_id: str,
+) -> int:
+    """
+    Delete all chunks for the given file paths from ChromaDB.
+
+    Args:
+        collection: ChromaDB collection
+        file_paths: List of file paths to delete chunks for
+        project_id: Project identifier
+
+    Returns:
+        Number of chunks deleted
+    """
+    if not file_paths:
+        return 0
+
+    deleted_count = 0
+    for file_path in file_paths:
+        try:
+            # Query for all chunks with this file path
+            results = collection.get(
+                where={
+                    "$and": [
+                        {"file_path": file_path},
+                        {"project": project_id},
+                    ]
+                },
+                include=[],  # We only need IDs
+            )
+
+            if results["ids"]:
+                collection.delete(ids=results["ids"])
+                deleted_count += len(results["ids"])
+                logger.debug(f"Deleted {len(results['ids'])} chunks for: {file_path}")
+
+        except Exception as e:
+            logger.warning(f"Failed to delete chunks for {file_path}: {e}")
+
+    return deleted_count
+
+
+def cleanup_state_entries(
+    state: dict[str, Any],
+    deleted_files: list[str],
+) -> None:
+    """Remove deleted files from state's file_hashes."""
+    file_hashes = state.get("file_hashes", {})
+    for file_path in deleted_files:
+        file_hashes.pop(file_path, None)
+
+
+# --- Hash-based Fallback ---
 
 
 def compute_file_hash(file_path: Path) -> str:
-    """Compute MD5 hash of a file for delta sync."""
+    """Compute MD5 hash of a file for delta sync (used as fallback)."""
     hasher = hashlib.md5()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
@@ -472,6 +668,13 @@ def ingest_codebase(
     """
     Ingest an entire codebase into the collection.
 
+    Uses git-based delta sync when available:
+    - Only processes files changed since last indexed commit
+    - Garbage collects chunks for deleted files
+    - Handles file renames (deletes old path, indexes new path)
+
+    Falls back to MD5 hash-based delta sync for non-git repos.
+
     Args:
         root_path: Root directory to ingest
         collection: ChromaDB collection to add documents to
@@ -497,23 +700,108 @@ def ingest_codebase(
         "files_scanned": 0,
         "files_processed": 0,
         "files_skipped": 0,
+        "files_deleted": 0,
         "chunks_created": 0,
+        "chunks_deleted": 0,
+        "delta_mode": "full",  # Will be updated to "git" or "hash"
         "errors": [],
     }
 
     # Load state for delta sync
-    state = {} if force_full else load_state(state_file)
+    raw_state = {} if force_full else load_state(state_file)
 
-    # Walk codebase
-    all_files = list(walk_codebase(root_path))
-    stats["files_scanned"] = len(all_files)
-    logger.debug(f"Scanned: {len(all_files)} files")
+    # Migrate old state format (flat dict of path->hash) to new format
+    if raw_state and "indexed_commit" not in raw_state and "file_hashes" not in raw_state:
+        # Old format: {"path1": "hash1", "path2": "hash2"}
+        # New format: {"indexed_commit": "...", "indexed_at": "...", "file_hashes": {...}}
+        state = {
+            "file_hashes": raw_state,
+            "indexed_commit": None,
+            "indexed_at": None,
+        }
+    else:
+        state = raw_state if raw_state else {
+            "file_hashes": {},
+            "indexed_commit": None,
+            "indexed_at": None,
+        }
 
-    # Filter to changed files
-    files_to_process = all_files if force_full else get_changed_files(all_files, state)
-    skipped_unchanged = len(all_files) - len(files_to_process)
-    if skipped_unchanged > 0:
-        logger.debug(f"Skipped (unchanged): {skipped_unchanged} files")
+    # Determine delta sync strategy
+    use_git = is_git_repo(root_path) and not force_full
+    last_commit = state.get("indexed_commit") if use_git else None
+    current_commit = get_head_commit(root_path) if use_git else None
+
+    files_to_process: list[Path] = []
+    deleted_files: list[str] = []
+    renamed_files: list[tuple[str, str]] = []
+
+    if force_full:
+        # Full re-ingestion requested
+        stats["delta_mode"] = "full"
+        all_files = list(walk_codebase(root_path))
+        files_to_process = all_files
+        stats["files_scanned"] = len(all_files)
+        logger.info(f"Full ingestion: {len(all_files)} files")
+
+    elif use_git and last_commit and current_commit:
+        # Git-based delta sync (fast path)
+        stats["delta_mode"] = "git"
+        modified, deleted_files, renamed_files = get_git_changed_files(
+            root_path, last_commit
+        )
+
+        # Also check for untracked files
+        untracked = get_untracked_files(root_path)
+
+        # Combine modified and untracked, filter through walk_codebase patterns
+        all_changed = set(modified + untracked)
+        all_valid_files = set(str(f) for f in walk_codebase(root_path))
+
+        # Only process files that pass our filters (not binary, not ignored, etc.)
+        files_to_process = [
+            Path(f) for f in all_changed
+            if f in all_valid_files and Path(f).exists()
+        ]
+
+        stats["files_scanned"] = len(files_to_process)
+        logger.info(
+            f"Git delta sync: {len(files_to_process)} modified, "
+            f"{len(deleted_files)} deleted, {len(renamed_files)} renamed"
+        )
+
+    else:
+        # Hash-based fallback (first index or non-git repo)
+        stats["delta_mode"] = "hash" if not force_full else "full"
+        all_files = list(walk_codebase(root_path))
+        stats["files_scanned"] = len(all_files)
+
+        # Filter to changed files using MD5 hashes
+        file_hashes = state.get("file_hashes", {})
+        files_to_process = get_changed_files(all_files, file_hashes)
+
+        skipped_unchanged = len(all_files) - len(files_to_process)
+        if skipped_unchanged > 0:
+            logger.debug(f"Skipped (unchanged by hash): {skipped_unchanged} files")
+
+    # --- Garbage Collection ---
+    # Handle deleted files: remove their chunks from ChromaDB
+    if deleted_files:
+        chunks_deleted = delete_file_chunks(collection, deleted_files, project_id)
+        stats["files_deleted"] = len(deleted_files)
+        stats["chunks_deleted"] = chunks_deleted
+        cleanup_state_entries(state, deleted_files)
+        logger.info(f"Garbage collected: {len(deleted_files)} files, {chunks_deleted} chunks")
+
+    # Handle renamed files: delete chunks at old paths
+    if renamed_files:
+        old_paths = [old for old, new in renamed_files]
+        chunks_deleted = delete_file_chunks(collection, old_paths, project_id)
+        stats["chunks_deleted"] += chunks_deleted
+        cleanup_state_entries(state, old_paths)
+        logger.info(f"Cleaned up {len(renamed_files)} renamed files")
+
+    # --- Process Files ---
+    file_hashes = state.get("file_hashes", {})
 
     for file_path in files_to_process:
         try:
@@ -530,8 +818,8 @@ def ingest_codebase(
                 stats["files_processed"] += 1
                 stats["chunks_created"] += len(doc_ids)
 
-                # Update state with new hash
-                state[str(file_path)] = compute_file_hash(file_path)
+                # Update state with new hash (for fallback mode and integrity)
+                file_hashes[str(file_path)] = compute_file_hash(file_path)
             else:
                 stats["files_skipped"] += 1
 
@@ -539,6 +827,13 @@ def ingest_codebase(
             logger.warning(f"Error processing {file_path}: {e}")
             stats["errors"].append({"file": str(file_path), "error": str(e)})
             stats["files_skipped"] += 1
+
+    # Update state with current commit and timestamp
+    state["file_hashes"] = file_hashes
+    state["indexed_commit"] = current_commit
+    state["indexed_at"] = datetime.now(timezone.utc).isoformat()
+    state["project"] = project_id
+    state["branch"] = branch
 
     # Save updated state
     save_state(state, state_file)
@@ -554,7 +849,11 @@ def ingest_codebase(
         stats["skeleton"] = {"error": str(e)}
 
     elapsed = time.time() - start_time
-    logger.info(f"Ingestion complete: {stats['files_processed']} files, {stats['chunks_created']} chunks in {elapsed:.1f}s")
+    logger.info(
+        f"Ingestion complete ({stats['delta_mode']}): "
+        f"{stats['files_processed']} files, {stats['chunks_created']} chunks, "
+        f"{stats['chunks_deleted']} deleted in {elapsed:.1f}s"
+    )
 
     return stats
 

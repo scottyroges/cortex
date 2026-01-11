@@ -13,11 +13,17 @@ from ingest import (
     _analyze_tree,
     _generate_tree_fallback,
     chunk_code_file,
+    cleanup_state_entries,
     compute_file_hash,
+    delete_file_chunks,
     generate_tree_structure,
     get_changed_files,
+    get_git_changed_files,
+    get_head_commit,
+    get_untracked_files,
     ingest_codebase,
     ingest_file,
+    is_git_repo,
     load_state,
     save_state,
     store_skeleton,
@@ -564,3 +570,381 @@ class TestSkeleton:
         assert len(skeleton_result["documents"]) == 1
         assert "main.py" in skeleton_result["documents"][0]
         assert "utils.py" in skeleton_result["documents"][0]
+
+
+class TestGitIntegration:
+    """Tests for git-based delta sync."""
+
+    def test_is_git_repo_true(self, temp_dir: Path):
+        """Test git repo detection in actual git repo."""
+        import subprocess
+
+        # Initialize a git repo
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+
+        assert is_git_repo(str(temp_dir)) is True
+
+    def test_is_git_repo_false(self, temp_dir: Path):
+        """Test git repo detection in non-git directory."""
+        assert is_git_repo(str(temp_dir)) is False
+
+    def test_get_head_commit(self, temp_dir: Path):
+        """Test getting HEAD commit hash."""
+        import subprocess
+
+        # Initialize git repo with a commit
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        (temp_dir / "test.txt").write_text("content")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        commit = get_head_commit(str(temp_dir))
+
+        assert commit is not None
+        assert len(commit) == 40  # SHA-1 hash length
+
+    def test_get_head_commit_no_commits(self, temp_dir: Path):
+        """Test HEAD commit in repo with no commits."""
+        import subprocess
+
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+
+        commit = get_head_commit(str(temp_dir))
+
+        assert commit is None
+
+    def test_get_git_changed_files(self, temp_dir: Path):
+        """Test git-based change detection."""
+        import subprocess
+
+        # Initialize git repo with initial commit
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        (temp_dir / "file1.py").write_text("original")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        initial_commit = get_head_commit(str(temp_dir))
+
+        # Make changes: modify file1, add file2, delete file3
+        (temp_dir / "file1.py").write_text("modified")
+        (temp_dir / "file2.py").write_text("new file")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "changes"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        modified, deleted, renamed = get_git_changed_files(str(temp_dir), initial_commit)
+
+        assert any("file1.py" in f for f in modified)
+        assert any("file2.py" in f for f in modified)
+        assert deleted == []
+        assert renamed == []
+
+    def test_get_git_changed_files_with_delete(self, temp_dir: Path):
+        """Test git detects deleted files."""
+        import subprocess
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        (temp_dir / "to_delete.py").write_text("will be deleted")
+        (temp_dir / "keep.py").write_text("keep this")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        initial_commit = get_head_commit(str(temp_dir))
+
+        # Delete file
+        (temp_dir / "to_delete.py").unlink()
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "delete file"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        modified, deleted, renamed = get_git_changed_files(str(temp_dir), initial_commit)
+
+        assert any("to_delete.py" in f for f in deleted)
+        assert not any("keep.py" in f for f in deleted)
+
+    def test_get_git_changed_files_with_rename(self, temp_dir: Path):
+        """Test git detects renamed files."""
+        import subprocess
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        (temp_dir / "old_name.py").write_text("content")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        initial_commit = get_head_commit(str(temp_dir))
+
+        # Rename file
+        (temp_dir / "old_name.py").rename(temp_dir / "new_name.py")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "rename file"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        modified, deleted, renamed = get_git_changed_files(str(temp_dir), initial_commit)
+
+        # Renamed files should appear in renamed list
+        assert len(renamed) == 1
+        old_path, new_path = renamed[0]
+        assert "old_name.py" in old_path
+        assert "new_name.py" in new_path
+        # New path should also be in modified for indexing
+        assert any("new_name.py" in f for f in modified)
+
+    def test_get_untracked_files(self, temp_dir: Path):
+        """Test detection of untracked files."""
+        import os
+        import subprocess
+
+        subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        # Create initial tracked file
+        (temp_dir / "committed_file.py").write_text("tracked")
+        subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=temp_dir,
+            capture_output=True,
+        )
+
+        # Add untracked file
+        (temp_dir / "new_untracked.py").write_text("untracked")
+
+        untracked = get_untracked_files(str(temp_dir))
+
+        # Check by filename to avoid path substring issues
+        untracked_names = [os.path.basename(f) for f in untracked]
+        assert "new_untracked.py" in untracked_names
+        assert "committed_file.py" not in untracked_names
+
+
+class TestGarbageCollection:
+    """Tests for garbage collection functionality."""
+
+    def test_delete_file_chunks(self, temp_dir: Path, temp_chroma_client):
+        """Test deleting chunks for a file."""
+        from rag_utils import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "test_gc")
+
+        # Add some chunks
+        collection.upsert(
+            ids=["proj:file1.py:0", "proj:file1.py:1", "proj:file2.py:0"],
+            documents=["chunk 1", "chunk 2", "chunk 3"],
+            metadatas=[
+                {"file_path": "/path/to/file1.py", "project": "proj", "type": "code"},
+                {"file_path": "/path/to/file1.py", "project": "proj", "type": "code"},
+                {"file_path": "/path/to/file2.py", "project": "proj", "type": "code"},
+            ],
+        )
+
+        # Delete chunks for file1
+        deleted = delete_file_chunks(collection, ["/path/to/file1.py"], "proj")
+
+        assert deleted == 2
+
+        # Verify file1 chunks are gone, file2 chunks remain
+        results = collection.get(include=["metadatas"])
+        assert len(results["ids"]) == 1
+        assert results["metadatas"][0]["file_path"] == "/path/to/file2.py"
+
+    def test_delete_file_chunks_empty_list(self, temp_chroma_client):
+        """Test that empty file list does nothing."""
+        from rag_utils import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "test_gc_empty")
+
+        deleted = delete_file_chunks(collection, [], "proj")
+
+        assert deleted == 0
+
+    def test_cleanup_state_entries(self):
+        """Test cleaning up state entries for deleted files."""
+        state = {
+            "file_hashes": {
+                "/path/to/file1.py": "hash1",
+                "/path/to/file2.py": "hash2",
+                "/path/to/file3.py": "hash3",
+            },
+            "indexed_commit": "abc123",
+        }
+
+        cleanup_state_entries(state, ["/path/to/file1.py", "/path/to/file3.py"])
+
+        assert "/path/to/file1.py" not in state["file_hashes"]
+        assert "/path/to/file2.py" in state["file_hashes"]
+        assert "/path/to/file3.py" not in state["file_hashes"]
+
+
+class TestStateFormat:
+    """Tests for state format migration and handling."""
+
+    def test_state_migration_old_to_new(self, temp_dir: Path, temp_chroma_client):
+        """Test that old state format is migrated to new format."""
+        from rag_utils import get_or_create_collection
+
+        # Create old-format state file
+        state_file = temp_dir / "state.json"
+        old_state = {
+            "/path/to/file1.py": "hash1",
+            "/path/to/file2.py": "hash2",
+        }
+        state_file.write_text(json.dumps(old_state))
+
+        # Create a code directory
+        code_dir = temp_dir / "code"
+        code_dir.mkdir()
+        (code_dir / "main.py").write_text("def main(): pass")
+
+        collection = get_or_create_collection(temp_chroma_client, "test_migrate")
+
+        # Run ingestion
+        ingest_codebase(
+            root_path=str(code_dir),
+            collection=collection,
+            header_provider="none",
+            state_file=str(state_file),
+        )
+
+        # Load updated state
+        new_state = load_state(str(state_file))
+
+        # Verify new format
+        assert "file_hashes" in new_state
+        assert "indexed_at" in new_state
+        assert "project" in new_state
+
+    def test_atomic_state_write(self, temp_dir: Path):
+        """Test that state writes are atomic."""
+        state_file = temp_dir / "state.json"
+        state = {
+            "file_hashes": {"file.py": "hash"},
+            "indexed_commit": "abc123",
+            "indexed_at": "2024-01-01T00:00:00Z",
+        }
+
+        save_state(state, str(state_file))
+
+        # Verify file exists and is valid JSON
+        loaded = load_state(str(state_file))
+        assert loaded == state
+
+    def test_ingest_reports_delta_mode(self, temp_dir: Path, temp_chroma_client):
+        """Test that ingestion reports which delta mode was used."""
+        from rag_utils import get_or_create_collection
+
+        code_dir = temp_dir / "code"
+        code_dir.mkdir()
+        (code_dir / "main.py").write_text("def main(): pass")
+
+        collection = get_or_create_collection(temp_chroma_client, "test_mode")
+        state_file = str(temp_dir / "state.json")
+
+        # First run should use hash mode (first index of non-git dir)
+        stats = ingest_codebase(
+            root_path=str(code_dir),
+            collection=collection,
+            header_provider="none",
+            state_file=state_file,
+        )
+
+        assert "delta_mode" in stats
+        # Non-git dir on first run uses hash-based
+        assert stats["delta_mode"] in ("hash", "full")
+
+    def test_ingest_tracks_deleted_stats(self, temp_dir: Path, temp_chroma_client):
+        """Test that ingestion tracks deletion stats."""
+        from rag_utils import get_or_create_collection
+
+        code_dir = temp_dir / "code"
+        code_dir.mkdir()
+        (code_dir / "main.py").write_text("def main(): pass")
+
+        collection = get_or_create_collection(temp_chroma_client, "test_del_stats")
+        state_file = str(temp_dir / "state.json")
+
+        stats = ingest_codebase(
+            root_path=str(code_dir),
+            collection=collection,
+            header_provider="none",
+            state_file=state_file,
+        )
+
+        assert "files_deleted" in stats
+        assert "chunks_deleted" in stats
+        assert stats["files_deleted"] == 0  # No deletions on first run
