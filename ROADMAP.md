@@ -31,13 +31,6 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 - Skeleton Index (`tree` output for file-path grounding)
 - FastAPI Bridge (HTTP endpoint at `localhost:8080/ingest`)
 
-### Universal Web Clipper
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Tampermonkey Script | "Save to Brain" button for browsers | ⬜ |
-| Target Sites | Gemini, ChatGPT, Confluence, docs sites | ⬜ |
-
 ### CLI & Slash Commands
 
 | Feature | Description | Status |
@@ -75,6 +68,19 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 | Datastore Cleanup | `cleanup_cortex` tool - remove orphaned chunks, old notes/commits, entries from deleted projects | ⬜ |
 | Selective Purge | Delete by filter (project, branch, type, date range) | ⬜ |
 
+---
+
+## Phase 3: External Input & Specialized Memory ⬜
+
+*Goal: Capture knowledge from outside the codebase and enable domain-specific retrieval.*
+
+### Universal Web Clipper
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Tampermonkey Script | "Save to Brain" button for browsers | ⬜ |
+| Target Sites | Gemini, ChatGPT, Confluence, docs sites | ⬜ |
+
 ### Domain-Specific Memories
 
 | Feature | Description | Status |
@@ -86,7 +92,7 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 ---
 
-## Phase 3: Enterprise Scale (Future) ⬜
+## Phase 4: Enterprise Scale (Future) ⬜
 
 *Goal: Scale to large teams and codebases.*
 
