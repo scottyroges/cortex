@@ -56,6 +56,36 @@ Add to `~/.claude.json`:
 
 Then restart Claude Code. The wrapper handles Docker mounting automatically.
 
+## Daemon Management
+
+Cortex runs as a singleton daemon in Docker. The daemon starts automatically when Claude Code connects, but you can manage it manually:
+
+```bash
+# Check daemon status and version
+cortex daemon status
+
+# View daemon logs
+cortex daemon logs
+
+# Restart with latest code changes
+cortex daemon rebuild
+
+# Stop the daemon
+cortex daemon stop
+```
+
+### Checking if Daemon is Up to Date
+
+After pulling code changes or making local edits, verify the daemon is current:
+
+```bash
+cortex daemon status
+```
+
+This shows the daemon's git commit vs your local HEAD. If they differ, run `cortex daemon rebuild`.
+
+You can also check from within a Claude Code session using the `get_cortex_version` MCP tool - just ask "is Cortex up to date?"
+
 ## MCP Tools
 
 | Tool | Description |
@@ -66,6 +96,7 @@ Then restart Claude Code. The wrapper handles Docker mounting automatically.
 | `save_note_to_cortex` | Store notes, decisions, or documentation |
 | `configure_cortex` | Adjust min_score, verbose mode, top_k settings |
 | `toggle_cortex` | Enable/disable for A/B testing |
+| `get_cortex_version` | Check daemon version and if rebuild is needed |
 
 ## Supported Languages (AST Chunking)
 
