@@ -13,23 +13,17 @@ A local, privacy-first memory system for Claude Code. Provides RAG capabilities 
 
 ## Quick Start
 
-### Build
+### Install
 
 ```bash
+# Clone and build
+git clone https://github.com/scottyroges/Cortex.git
+cd Cortex
 docker build -t cortex .
+
+# Install wrapper script
+cp cortex /usr/local/bin/
 ```
-
-### Run
-
-```bash
-docker run -i --rm \
-  -v ~/.cortex:/root/.cortex \
-  -v ~/MyProject:/projects \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  cortex
-```
-
-**Note:** Data is stored in `~/.cortex/db` by default. Override with `CORTEX_DB_PATH` env var.
 
 ### Configure Claude Code
 
@@ -39,18 +33,16 @@ Add to `~/.claude/settings.json`:
 {
   "mcpServers": {
     "cortex": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "~/.cortex:/root/.cortex",
-        "-v", "/path/to/code:/projects",
-        "-e", "ANTHROPIC_API_KEY=sk-ant-...",
-        "cortex"
-      ]
+      "command": "cortex",
+      "env": {
+        "CORTEX_CODE_PATHS": "~/Projects,~/Work"
+      }
     }
   }
 }
 ```
+
+That's it! The wrapper handles Docker mounting automatically.
 
 ## MCP Tools
 
@@ -91,7 +83,41 @@ Files with unsupported extensions are still indexed using generic text splitting
 
 ## Configuration
 
-Runtime settings via `configure_cortex`:
+### Environment Variables
+
+Set these in your MCP config's `env` block:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CORTEX_CODE_PATHS` | - | Comma-separated code directories (e.g., `~/Projects,~/Work`) |
+| `CORTEX_DATA_PATH` | `~/.cortex` | Where to store Cortex data |
+| `CORTEX_HEADER_PROVIDER` | `none` | Header provider: `anthropic`, `claude-cli`, or `none` |
+| `CORTEX_DEBUG` | `false` | Enable debug logging |
+| `CORTEX_LOG_FILE` | - | Log file name (e.g., `debug.log`) |
+| `CORTEX_HTTP` | `false` | Enable HTTP debug server |
+| `CORTEX_HTTP_PORT` | `8080` | HTTP server port |
+| `ANTHROPIC_API_KEY` | - | Required for `header_provider=anthropic` |
+
+**Example with all options:**
+```json
+{
+  "mcpServers": {
+    "cortex": {
+      "command": "cortex",
+      "env": {
+        "CORTEX_CODE_PATHS": "~/Projects,~/Work",
+        "CORTEX_HEADER_PROVIDER": "claude-cli",
+        "CORTEX_DEBUG": "true",
+        "CORTEX_LOG_FILE": "debug.log"
+      }
+    }
+  }
+}
+```
+
+### Runtime Settings
+
+Adjust via `configure_cortex` tool:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -99,72 +125,39 @@ Runtime settings via `configure_cortex`:
 | `verbose` | false | Include debug info in responses |
 | `top_k_retrieve` | 50 | Candidates before reranking |
 | `top_k_rerank` | 5 | Final results after reranking |
-| `header_provider` | "none" | Contextual header provider (see below) |
 
 ### Header Providers
 
-Contextual headers add AI-generated summaries to each code chunk during ingestion:
+Contextual headers add AI-generated summaries to each code chunk:
 
 | Provider | Description |
 |----------|-------------|
-| `"none"` | No headers (fastest, default) |
-| `"claude-cli"` | Use Claude CLI (`claude -p`) - uses your existing Claude auth |
-| `"anthropic"` | Use Anthropic API directly - requires `ANTHROPIC_API_KEY` |
-
-Set via environment variable in your MCP config:
-```json
-{
-  "mcpServers": {
-    "cortex": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "~/.cortex:/root/.cortex",
-        "-v", "/path/to/code:/projects",
-        "-e", "CORTEX_HEADER_PROVIDER=claude-cli",
-        "cortex"
-      ]
-    }
-  }
-}
-```
-
-Or configure at runtime via MCP tool:
-```
-configure_cortex(header_provider="claude-cli")
-```
+| `none` | No headers (fastest, default) |
+| `claude-cli` | Uses Claude CLI - leverages your existing Claude auth |
+| `anthropic` | Uses Anthropic API - requires `ANTHROPIC_API_KEY` |
 
 ## Debugging
 
 ### Debug Logging
 
-Enable debug logging to see detailed search/ingestion pipeline info:
+```json
+"env": {
+  "CORTEX_DEBUG": "true",
+  "CORTEX_LOG_FILE": "debug.log"
+}
+```
 
+Then tail the log:
 ```bash
-docker run -i --rm \
-  -v ~/.cortex:/root/.cortex \
-  -v ~/MyProject:/projects \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e CORTEX_DEBUG=true \
-  -e CORTEX_LOG_FILE=/root/.cortex/debug.log \
-  cortex
-
-# Tail the log in another terminal
 tail -f ~/.cortex/debug.log
 ```
 
 ### HTTP Debug Server
 
-Enable the optional HTTP server for database inspection:
-
-```bash
-docker run -i --rm \
-  -p 8080:8080 \
-  -v ~/.cortex:/root/.cortex \
-  -v ~/MyProject:/projects \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e CORTEX_HTTP=true \
-  cortex
+```json
+"env": {
+  "CORTEX_HTTP": "true"
+}
 ```
 
 Debug endpoints:
@@ -192,9 +185,12 @@ pytest tests/ -v
 
 ```
 Cortex/
+├── cortex             # Wrapper script (install to /usr/local/bin)
 ├── server.py          # MCP server + tool definitions
 ├── rag_utils.py       # ChromaDB, FlashRank, BM25, secret scrubbing
 ├── ingest.py          # File walking, AST chunking, delta sync
+├── http_server.py     # FastAPI debug/Phase 2 endpoints
+├── logging_config.py  # Debug logging configuration
 ├── requirements.txt   # Python dependencies
 ├── Dockerfile         # Container definition
 └── tests/             # pytest test suite

@@ -1,0 +1,74 @@
+#!/bin/bash
+#
+# Cortex MCP Server Wrapper
+#
+# Handles Docker volume mounting based on simple environment variables.
+#
+# Environment variables:
+#   CORTEX_CODE_PATHS    - Comma-separated list of code directories to mount
+#                          Example: "~/Projects,~/Work"
+#   CORTEX_DATA_PATH     - Where to store Cortex data (default: ~/.cortex)
+#   CORTEX_HEADER_PROVIDER - Header provider: "anthropic", "claude-cli", or "none"
+#   CORTEX_DEBUG         - Enable debug logging (true/false)
+#   CORTEX_LOG_FILE      - Log file path (relative to data path)
+#   CORTEX_HTTP          - Enable HTTP server (true/false)
+#   CORTEX_HTTP_PORT     - HTTP port (default: 8080)
+#   ANTHROPIC_API_KEY    - Required for header_provider="anthropic"
+#
+
+set -e
+
+# Defaults
+DATA_PATH="${CORTEX_DATA_PATH:-$HOME/.cortex}"
+CODE_PATHS="${CORTEX_CODE_PATHS:-}"
+HTTP_PORT="${CORTEX_HTTP_PORT:-8080}"
+
+# Expand ~ in paths
+DATA_PATH="${DATA_PATH/#\~/$HOME}"
+
+# Build Docker args
+DOCKER_ARGS=(
+    "run" "-i" "--rm"
+    # Mount data directory
+    "-v" "$DATA_PATH:$DATA_PATH"
+    "-e" "CORTEX_DB_PATH=$DATA_PATH/db"
+)
+
+# Mount code paths
+if [ -n "$CODE_PATHS" ]; then
+    IFS=',' read -ra PATHS <<< "$CODE_PATHS"
+    for path in "${PATHS[@]}"; do
+        # Trim whitespace and expand ~
+        path="$(echo "$path" | xargs)"
+        path="${path/#\~/$HOME}"
+        if [ -d "$path" ]; then
+            DOCKER_ARGS+=("-v" "$path:$path")
+        else
+            echo "Warning: Code path does not exist: $path" >&2
+        fi
+    done
+fi
+
+# Pass through environment variables
+[ -n "$CORTEX_HEADER_PROVIDER" ] && DOCKER_ARGS+=("-e" "CORTEX_HEADER_PROVIDER=$CORTEX_HEADER_PROVIDER")
+[ -n "$CORTEX_DEBUG" ] && DOCKER_ARGS+=("-e" "CORTEX_DEBUG=$CORTEX_DEBUG")
+[ -n "$ANTHROPIC_API_KEY" ] && DOCKER_ARGS+=("-e" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
+
+# Handle log file (make path absolute if relative)
+if [ -n "$CORTEX_LOG_FILE" ]; then
+    if [[ "$CORTEX_LOG_FILE" != /* ]]; then
+        CORTEX_LOG_FILE="$DATA_PATH/$CORTEX_LOG_FILE"
+    fi
+    DOCKER_ARGS+=("-e" "CORTEX_LOG_FILE=$CORTEX_LOG_FILE")
+fi
+
+# HTTP server
+if [ "$CORTEX_HTTP" = "true" ]; then
+    DOCKER_ARGS+=("-p" "$HTTP_PORT:8080" "-e" "CORTEX_HTTP=true")
+fi
+
+# Add image name
+DOCKER_ARGS+=("cortex")
+
+# Run Docker
+exec docker "${DOCKER_ARGS[@]}" "$@"
