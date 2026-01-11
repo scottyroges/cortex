@@ -15,17 +15,21 @@ COPY . .
 # Create persistence directory
 RUN mkdir -p /app/cortex_db
 
-# Expose HTTP port for debug/Phase 2 endpoints (optional)
-# Enable with: CORTEX_HTTP=true or --http flag
-EXPOSE 8080
+# Expose ports:
+#   8000 - MCP daemon HTTP API
+#   8080 - Debug/Phase 2 HTTP endpoints
+EXPOSE 8000 8080
 
-# Run the MCP server
-# Optional flags:
-#   --http          Enable HTTP server for debugging/Phase 2 features
-# Optional env vars:
-#   CORTEX_HTTP=true            Enable HTTP server
+# Entrypoint dispatcher supports multiple modes:
+#   daemon  - Run HTTP server for MCP requests (default)
+#   bridge  - Run stdio-to-HTTP bridge for Claude Code session
+#   stdio   - Run original stdio MCP server (backward compatibility)
+#
+# Environment variables:
 #   CORTEX_DEBUG=true           Enable debug logging
-#   CORTEX_LOG_FILE=path        Log file path (default: $CORTEX_DATA_PATH/cortex.log)
+#   CORTEX_LOG_FILE=path        Log file path
 #   CORTEX_HEADER_PROVIDER=X    Header provider: "anthropic", "claude-cli", or "none"
 #   CORTEX_DB_PATH=path         Custom database path
-ENTRYPOINT ["python", "server.py"]
+#   CORTEX_DAEMON_URL=url       Daemon URL (for bridge mode)
+ENTRYPOINT ["python", "entrypoint.py"]
+CMD ["daemon"]

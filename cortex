@@ -1,26 +1,40 @@
 #!/bin/bash
 #
-# Cortex MCP Server Wrapper
+# Cortex MCP Server Wrapper - Singleton Daemon Architecture
 #
-# Handles Docker volume mounting based on simple environment variables.
-# Automatically builds the Docker image if it doesn't exist.
+# Usage:
+#   cortex              - Default: auto-start daemon if needed, run bridge
+#   cortex daemon start - Start the daemon
+#   cortex daemon stop  - Stop the daemon
+#   cortex daemon restart - Restart the daemon
+#   cortex daemon status - Check daemon status
+#   cortex daemon logs  - View daemon logs
+#   cortex stdio        - Run in legacy stdio mode (no daemon)
 #
 # Environment variables:
 #   CORTEX_CODE_PATHS    - Comma-separated list of code directories to mount
-#                          Example: "~/Projects,~/Work"
 #   CORTEX_DATA_PATH     - Where to store Cortex data (default: ~/.cortex)
 #   CORTEX_HEADER_PROVIDER - Header provider: "anthropic", "claude-cli", or "none"
 #   CORTEX_DEBUG         - Enable debug logging (true/false)
-#   CORTEX_LOG_FILE      - Log file path (default: $CORTEX_DATA_PATH/cortex.log)
-#   CORTEX_HTTP          - Enable HTTP server (true/false)
-#   CORTEX_HTTP_PORT     - HTTP port (default: 8080)
+#   CORTEX_LOG_FILE      - Log file path
+#   CORTEX_DAEMON_PORT   - Daemon port (default: 8000)
 #   ANTHROPIC_API_KEY    - Required for header_provider="anthropic"
 #
 
-set -e
+# --- Configuration ---
+DAEMON_CONTAINER_NAME="cortex-daemon"
+DAEMON_PORT="${CORTEX_DAEMON_PORT:-8000}"
+HTTP_PORT="${CORTEX_HTTP_PORT:-8080}"
+IMAGE_NAME="cortex"
+
+# Defaults
+DATA_PATH="${CORTEX_DATA_PATH:-$HOME/.cortex}"
+CODE_PATHS="${CORTEX_CODE_PATHS:-}"
+
+# Expand ~ in paths
+DATA_PATH="${DATA_PATH/#\~/$HOME}"
 
 # --- Find the Cortex source directory ---
-# Follow symlinks to find the actual script location
 get_script_dir() {
     local source="${BASH_SOURCE[0]}"
     while [ -L "$source" ]; do
@@ -33,69 +47,240 @@ get_script_dir() {
 
 CORTEX_SRC_DIR="$(get_script_dir)"
 
-# --- Build Docker image ---
-IMAGE_NAME="cortex"
+# --- Helper Functions ---
 
-echo "Building Cortex Docker image..." >&2
-if docker build -t "$IMAGE_NAME" "$CORTEX_SRC_DIR" >&2; then
-    echo "Cortex image built successfully." >&2
-else
-    echo "Error: Failed to build Cortex image." >&2
-    exit 1
-fi
+log_info() {
+    echo "[cortex] $1" >&2
+}
 
-# Defaults
-DATA_PATH="${CORTEX_DATA_PATH:-$HOME/.cortex}"
-CODE_PATHS="${CORTEX_CODE_PATHS:-}"
-HTTP_PORT="${CORTEX_HTTP_PORT:-8080}"
+log_error() {
+    echo "[cortex] ERROR: $1" >&2
+}
 
-# Expand ~ in paths
-DATA_PATH="${DATA_PATH/#\~/$HOME}"
-
-# Build Docker args
-DOCKER_ARGS=(
-    "run" "-i" "--rm"
-    # Mount data directory
-    "-v" "$DATA_PATH:$DATA_PATH"
-    "-e" "CORTEX_DATA_PATH=$DATA_PATH"
-    "-e" "CORTEX_DB_PATH=$DATA_PATH/db"
-)
-
-# Mount code paths
-if [ -n "$CODE_PATHS" ]; then
-    IFS=',' read -ra PATHS <<< "$CODE_PATHS"
-    for path in "${PATHS[@]}"; do
-        # Trim whitespace and expand ~
-        path="$(echo "$path" | xargs)"
-        path="${path/#\~/$HOME}"
-        if [ -d "$path" ]; then
-            DOCKER_ARGS+=("-v" "$path:$path")
-        else
-            echo "Warning: Code path does not exist: $path" >&2
-        fi
-    done
-fi
-
-# Pass through environment variables
-[ -n "$CORTEX_HEADER_PROVIDER" ] && DOCKER_ARGS+=("-e" "CORTEX_HEADER_PROVIDER=$CORTEX_HEADER_PROVIDER")
-[ -n "$CORTEX_DEBUG" ] && DOCKER_ARGS+=("-e" "CORTEX_DEBUG=$CORTEX_DEBUG")
-[ -n "$ANTHROPIC_API_KEY" ] && DOCKER_ARGS+=("-e" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
-
-# Handle log file (make path absolute if relative)
-if [ -n "$CORTEX_LOG_FILE" ]; then
-    if [[ "$CORTEX_LOG_FILE" != /* ]]; then
-        CORTEX_LOG_FILE="$DATA_PATH/$CORTEX_LOG_FILE"
+build_image() {
+    log_info "Building Cortex Docker image..."
+    if docker build -t "$IMAGE_NAME" "$CORTEX_SRC_DIR" >&2; then
+        log_info "Image built successfully"
+    else
+        log_error "Failed to build image"
+        exit 1
     fi
-    DOCKER_ARGS+=("-e" "CORTEX_LOG_FILE=$CORTEX_LOG_FILE")
-fi
+}
 
-# HTTP server
-if [ "$CORTEX_HTTP" = "true" ]; then
-    DOCKER_ARGS+=("-p" "$HTTP_PORT:8080" "-e" "CORTEX_HTTP=true")
-fi
+build_image_if_needed() {
+    # Build if image doesn't exist or source is newer
+    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+        build_image
+    fi
+}
 
-# Add image name
-DOCKER_ARGS+=("cortex")
+is_daemon_running() {
+    docker ps --filter "name=^${DAEMON_CONTAINER_NAME}$" --format '{{.Names}}' 2>/dev/null | grep -q "^${DAEMON_CONTAINER_NAME}$"
+}
 
-# Run Docker
-exec docker "${DOCKER_ARGS[@]}" "$@"
+wait_for_daemon() {
+    local max_attempts=30
+    local attempt=0
+    log_info "Waiting for daemon to be ready..."
+
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -sf "http://localhost:${DAEMON_PORT}/health" >/dev/null 2>&1; then
+            log_info "Daemon is ready"
+            return 0
+        fi
+        sleep 0.5
+        attempt=$((attempt + 1))
+    done
+
+    log_error "Daemon failed to start within timeout"
+    return 1
+}
+
+# Global arrays for docker arguments
+DOCKER_VOLUMES=()
+DOCKER_ENVS=()
+
+build_docker_volumes() {
+    DOCKER_VOLUMES=()
+
+    # Mount data directory (ensure it exists)
+    mkdir -p "$DATA_PATH"
+    DOCKER_VOLUMES+=("-v" "$DATA_PATH:$DATA_PATH")
+
+    # Mount code paths
+    if [ -n "$CODE_PATHS" ]; then
+        IFS=',' read -ra PATHS <<< "$CODE_PATHS"
+        for path in "${PATHS[@]}"; do
+            path="$(echo "$path" | xargs)"
+            path="${path/#\~/$HOME}"
+            if [ -d "$path" ]; then
+                DOCKER_VOLUMES+=("-v" "$path:$path:ro")
+            else
+                log_info "Warning: Code path does not exist: $path"
+            fi
+        done
+    fi
+}
+
+build_docker_env() {
+    DOCKER_ENVS=()
+    DOCKER_ENVS+=("-e" "CORTEX_DATA_PATH=$DATA_PATH")
+    DOCKER_ENVS+=("-e" "CORTEX_DB_PATH=$DATA_PATH/db")
+    [ -n "$CORTEX_HEADER_PROVIDER" ] && DOCKER_ENVS+=("-e" "CORTEX_HEADER_PROVIDER=$CORTEX_HEADER_PROVIDER")
+    [ -n "$CORTEX_DEBUG" ] && DOCKER_ENVS+=("-e" "CORTEX_DEBUG=$CORTEX_DEBUG")
+    [ -n "$ANTHROPIC_API_KEY" ] && DOCKER_ENVS+=("-e" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
+    [ -n "$CORTEX_LOG_FILE" ] && DOCKER_ENVS+=("-e" "CORTEX_LOG_FILE=$CORTEX_LOG_FILE")
+}
+
+start_daemon() {
+    if is_daemon_running; then
+        log_info "Daemon is already running"
+        return 0
+    fi
+
+    # Clean up any stopped container with the same name
+    docker rm "$DAEMON_CONTAINER_NAME" 2>/dev/null || true
+
+    log_info "Starting Cortex daemon..."
+
+    build_docker_volumes
+    build_docker_env
+
+    docker run -d \
+        --name "$DAEMON_CONTAINER_NAME" \
+        --restart unless-stopped \
+        -p "${DAEMON_PORT}:8000" \
+        -p "${HTTP_PORT}:8080" \
+        "${DOCKER_VOLUMES[@]}" \
+        "${DOCKER_ENVS[@]}" \
+        "$IMAGE_NAME" daemon >&2
+
+    if wait_for_daemon; then
+        log_info "Daemon started on port $DAEMON_PORT"
+        return 0
+    else
+        log_error "Daemon failed to start"
+        docker logs "$DAEMON_CONTAINER_NAME" >&2
+        return 1
+    fi
+}
+
+stop_daemon() {
+    if is_daemon_running; then
+        log_info "Stopping Cortex daemon..."
+        docker stop "$DAEMON_CONTAINER_NAME" >&2
+        docker rm "$DAEMON_CONTAINER_NAME" >&2
+        log_info "Daemon stopped"
+    else
+        log_info "Daemon is not running"
+    fi
+}
+
+daemon_status() {
+    if is_daemon_running; then
+        echo "Daemon is running"
+        docker ps --filter "name=^${DAEMON_CONTAINER_NAME}$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        echo ""
+        echo "Health check:"
+        curl -s "http://localhost:${DAEMON_PORT}/health" 2>/dev/null || echo "Failed to reach daemon"
+    else
+        echo "Daemon is not running"
+        exit 1
+    fi
+}
+
+daemon_logs() {
+    if is_daemon_running; then
+        docker logs -f "$DAEMON_CONTAINER_NAME"
+    else
+        # Show logs from stopped container if it exists
+        docker logs "$DAEMON_CONTAINER_NAME" 2>/dev/null || echo "No logs available"
+    fi
+}
+
+run_bridge() {
+    # Ensure daemon is running
+    if ! is_daemon_running; then
+        build_image_if_needed
+        start_daemon
+    fi
+
+    # Build env vars for bridge
+    build_docker_env
+
+    # Run bridge in foreground, connecting to daemon
+    exec docker run -i --rm \
+        --network host \
+        -e "CORTEX_DAEMON_URL=http://localhost:${DAEMON_PORT}" \
+        "${DOCKER_ENVS[@]}" \
+        "$IMAGE_NAME" bridge
+}
+
+run_stdio_legacy() {
+    # Legacy mode: run stdio MCP server directly (no daemon)
+    log_info "Running in legacy stdio mode..."
+
+    build_docker_volumes
+    build_docker_env
+
+    exec docker run -i --rm \
+        "${DOCKER_VOLUMES[@]}" \
+        "${DOCKER_ENVS[@]}" \
+        "$IMAGE_NAME" stdio
+}
+
+# --- Main Command Handling ---
+
+case "${1:-}" in
+    daemon)
+        case "${2:-status}" in
+            start)
+                build_image_if_needed
+                start_daemon
+                ;;
+            stop)
+                stop_daemon
+                ;;
+            restart)
+                stop_daemon
+                build_image
+                start_daemon
+                ;;
+            status)
+                daemon_status
+                ;;
+            logs)
+                daemon_logs
+                ;;
+            rebuild)
+                stop_daemon
+                build_image
+                start_daemon
+                ;;
+            *)
+                echo "Usage: cortex daemon {start|stop|restart|status|logs|rebuild}" >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    stdio)
+        # Legacy stdio mode
+        build_image_if_needed
+        run_stdio_legacy
+        ;;
+    logs)
+        daemon_logs
+        ;;
+    rebuild)
+        stop_daemon
+        build_image
+        start_daemon
+        ;;
+    *)
+        # Default: run stdio bridge (auto-starts daemon if needed)
+        run_bridge
+        ;;
+esac
