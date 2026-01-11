@@ -609,10 +609,15 @@ MCP_TOOL_SCHEMAS = [
     },
     {
         "name": "get_cortex_version",
-        "description": "Get Cortex daemon build and version information to verify the daemon is running expected code.",
+        "description": "Get Cortex daemon build and version information. Pass expected_commit to check if rebuild is needed.",
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "expected_commit": {
+                    "type": "string",
+                    "description": "Git commit hash to compare against (e.g., local HEAD). If provided, returns needs_rebuild field.",
+                },
+            },
         },
     },
 ]

@@ -902,12 +902,17 @@ def toggle_cortex(enabled: bool) -> str:
 
 
 @mcp.tool()
-def get_cortex_version() -> str:
+def get_cortex_version(expected_commit: Optional[str] = None) -> str:
     """
     Get Cortex daemon build and version information.
 
     Returns git commit, build time, and startup time to verify the daemon
-    is running the expected code version.
+    is running the expected code version. Pass expected_commit to check if
+    a rebuild is needed.
+
+    Args:
+        expected_commit: The git commit hash to compare against (e.g., local HEAD).
+                        If provided, returns needs_rebuild indicating if daemon is outdated.
 
     Returns:
         JSON with version info and whether daemon matches local code
@@ -922,12 +927,26 @@ def get_cortex_version() -> str:
     except ImportError:
         startup_time = "unknown"
 
-    return json.dumps({
+    result = {
         "git_commit": git_commit,
         "build_time": build_time,
         "startup_time": startup_time,
         "version": "1.0.0",
-    }, indent=2)
+    }
+
+    # Compare against expected commit if provided
+    if expected_commit:
+        result["expected_commit"] = expected_commit
+        # Compare short commits (handle both short and full hashes)
+        daemon_short = git_commit[:7] if len(git_commit) >= 7 else git_commit
+        expected_short = expected_commit[:7] if len(expected_commit) >= 7 else expected_commit
+        result["needs_rebuild"] = daemon_short != expected_short
+        if result["needs_rebuild"]:
+            result["message"] = f"Daemon is outdated. Run 'cortex daemon rebuild' to update from {daemon_short} to {expected_short}."
+        else:
+            result["message"] = "Daemon is up to date."
+
+    return json.dumps(result, indent=2)
 
 
 # --- Entry Point ---
