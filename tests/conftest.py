@@ -3,11 +3,16 @@ Pytest fixtures for Cortex tests.
 """
 
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Generator
 
 import pytest
+
+# Add project root to path for src imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # Set test environment
 os.environ["CORTEX_DB_PATH"] = "/tmp/cortex_test_db"

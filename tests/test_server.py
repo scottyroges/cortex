@@ -1,5 +1,5 @@
 """
-Tests for server.py MCP tools
+Tests for server MCP tools
 """
 
 import json
@@ -11,20 +11,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-# Mock the MCP module before importing server
-@pytest.fixture(autouse=True)
-def mock_mcp():
-    """Mock MCP server for testing."""
-    with patch.dict("sys.modules", {"mcp": MagicMock(), "mcp.server": MagicMock(), "mcp.server.fastmcp": MagicMock()}):
-        yield
-
-
 class TestSearchCortex:
     """Tests for search_cortex tool."""
 
     def test_search_returns_results(self, temp_dir: Path, temp_chroma_client):
         """Test that search returns results from indexed content."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         # Set up collection with test data
         collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
@@ -43,7 +35,7 @@ class TestSearchCortex:
         )
 
         # Import and test search
-        from rag_utils import HybridSearcher, RerankerService
+        from src.search import HybridSearcher, RerankerService
 
         searcher = HybridSearcher(collection)
         reranker = RerankerService()
@@ -63,7 +55,7 @@ class TestSearchCortex:
         """Test that search returns error when Cortex is disabled."""
         # This would require importing server module with mocked dependencies
         # For now, we test the config behavior
-        from server import CONFIG
+        from src.tools.services import CONFIG
 
         CONFIG["enabled"] = False
 
@@ -76,7 +68,8 @@ class TestSearchCortex:
 
     def test_search_empty_collection(self, temp_chroma_client):
         """Test search on empty collection."""
-        from rag_utils import get_or_create_collection, HybridSearcher
+        from src.search import HybridSearcher
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "empty")
         searcher = HybridSearcher(collection)
@@ -91,8 +84,8 @@ class TestIngestCodeIntoCortex:
 
     def test_ingest_basic(self, temp_dir: Path, temp_chroma_client):
         """Test basic code ingestion."""
-        from rag_utils import get_or_create_collection
-        from ingest import ingest_codebase
+        from src.ingest import ingest_codebase
+        from src.storage import get_or_create_collection
 
         # Create test files
         (temp_dir / "main.py").write_text("def hello(): print('world')")
@@ -124,8 +117,8 @@ class TestIngestCodeIntoCortex:
 
     def test_ingest_respects_force_full(self, temp_dir: Path, temp_chroma_client):
         """Test that force_full re-ingests everything."""
-        from rag_utils import get_or_create_collection
-        from ingest import ingest_codebase
+        from src.ingest import ingest_codebase
+        from src.storage import get_or_create_collection
 
         (temp_dir / "main.py").write_text("def main(): pass")
 
@@ -168,8 +161,10 @@ class TestCommitToCortex:
 
     def test_commit_saves_summary(self, temp_dir: Path, temp_chroma_client):
         """Test that commit saves summary to collection."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         import uuid
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "commit_test")
 
@@ -202,8 +197,10 @@ class TestSaveNoteToCortex:
 
     def test_save_note_basic(self, temp_chroma_client):
         """Test basic note saving."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         import uuid
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "notes_test")
 
@@ -236,8 +233,10 @@ class TestSaveNoteToCortex:
 
     def test_save_note_scrubs_secrets(self, temp_chroma_client):
         """Test that notes have secrets scrubbed."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         import uuid
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "secret_notes")
 
@@ -259,7 +258,7 @@ class TestConfigureCortex:
 
     def test_configure_min_score(self):
         """Test configuring min_score."""
-        from server import CONFIG
+        from src.tools.services import CONFIG
 
         original = CONFIG["min_score"]
 
@@ -271,7 +270,7 @@ class TestConfigureCortex:
 
     def test_configure_verbose(self):
         """Test configuring verbose mode."""
-        from server import CONFIG
+        from src.tools.services import CONFIG
 
         original = CONFIG["verbose"]
 
@@ -286,7 +285,7 @@ class TestConfigureCortex:
 
     def test_configure_top_k_limits(self):
         """Test that top_k values are bounded."""
-        from server import CONFIG
+        from src.tools.services import CONFIG
 
         # Test top_k_retrieve
         CONFIG["top_k_retrieve"] = max(10, min(200, 5))  # Below min
@@ -307,14 +306,14 @@ class TestToggleCortex:
 
     def test_toggle_disable(self):
         """Test disabling Cortex."""
-        from server import CONFIG
+        from src.tools.services import CONFIG
 
         CONFIG["enabled"] = False
         assert CONFIG["enabled"] is False
 
     def test_toggle_enable(self):
         """Test enabling Cortex."""
-        from server import CONFIG
+        from src.tools.services import CONFIG
 
         CONFIG["enabled"] = True
         assert CONFIG["enabled"] is True
@@ -325,8 +324,10 @@ class TestContextTools:
 
     def test_set_context_saves_domain(self, temp_chroma_client):
         """Test that set_context_in_cortex saves domain context."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         from datetime import datetime, timezone
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "context_test")
 
@@ -355,8 +356,10 @@ class TestContextTools:
 
     def test_set_context_saves_project_status(self, temp_chroma_client):
         """Test that set_context_in_cortex saves project status."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         from datetime import datetime, timezone
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "context_test2")
 
@@ -384,8 +387,9 @@ class TestContextTools:
 
     def test_context_upsert_overwrites(self, temp_chroma_client):
         """Test that context is overwritten on update (upsert behavior)."""
-        from rag_utils import get_or_create_collection
         from datetime import datetime, timezone
+
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "context_upsert")
 
@@ -424,8 +428,9 @@ class TestContextTools:
 
     def test_get_context_retrieves_both(self, temp_chroma_client):
         """Test that get_context retrieves both domain and project context."""
-        from rag_utils import get_or_create_collection
         from datetime import datetime, timezone
+
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "context_get")
 
@@ -471,8 +476,10 @@ class TestContextTools:
 
     def test_context_scrubs_secrets(self, temp_chroma_client):
         """Test that context has secrets scrubbed."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         from datetime import datetime, timezone
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "context_secrets")
 
@@ -499,8 +506,9 @@ class TestContextTools:
 
     def test_context_included_in_search(self, temp_chroma_client):
         """Test that context can be fetched alongside search results."""
-        from rag_utils import get_or_create_collection
         from datetime import datetime, timezone
+
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "context_search")
 
@@ -601,7 +609,7 @@ class TestContextTools:
 
     def test_get_context_empty_returns_message(self, temp_chroma_client):
         """Test that get_context returns helpful message when no context exists."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "empty_context")
         project = "nonexistent_project"
@@ -628,8 +636,10 @@ class TestContextTools:
 
     def test_set_context_domain_only(self, temp_chroma_client):
         """Test setting only domain context (no project_status)."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         from datetime import datetime, timezone
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "domain_only")
 
@@ -662,8 +672,10 @@ class TestContextTools:
 
     def test_set_context_status_only(self, temp_chroma_client):
         """Test setting only project_status (no domain)."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         from datetime import datetime, timezone
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "status_only")
 
@@ -696,8 +708,10 @@ class TestContextTools:
 
     def test_update_project_status_overwrites(self, temp_chroma_client):
         """Test that update_project_status overwrites existing status."""
-        from rag_utils import get_or_create_collection, scrub_secrets
         from datetime import datetime, timezone
+
+        from src.security import scrub_secrets
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "update_status")
 
@@ -741,8 +755,9 @@ class TestIntegration:
 
     def test_full_workflow(self, temp_dir: Path, temp_chroma_client):
         """Test complete ingest -> search workflow."""
-        from rag_utils import get_or_create_collection, HybridSearcher, RerankerService
-        from ingest import ingest_codebase
+        from src.ingest import ingest_codebase
+        from src.search import HybridSearcher, RerankerService
+        from src.storage import get_or_create_collection
 
         # Create test codebase
         (temp_dir / "calculator.py").write_text('''
@@ -805,8 +820,10 @@ def validate_input(value):
 
     def test_note_searchable(self, temp_chroma_client):
         """Test that saved notes are searchable."""
-        from rag_utils import get_or_create_collection, HybridSearcher, RerankerService
         import uuid
+
+        from src.search import HybridSearcher, RerankerService
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "notes_search")
 

@@ -1,5 +1,5 @@
 """
-Tests for rag_utils.py
+Tests for search and utility modules
 """
 
 from pathlib import Path
@@ -7,19 +7,17 @@ from pathlib import Path
 import pytest
 from langchain_text_splitters import Language
 
-from rag_utils import (
+from src.git import get_current_branch, get_git_info
+from src.ingest import detect_language
+from src.search import (
     BM25Index,
     HybridSearcher,
     RerankerService,
     apply_recency_boost,
-    detect_language,
-    get_collection_stats,
-    get_current_branch,
-    get_git_info,
-    get_or_create_collection,
     reciprocal_rank_fusion,
-    scrub_secrets,
 )
+from src.security import scrub_secrets
+from src.storage import get_collection_stats, get_or_create_collection
 
 
 class TestSecretScrubbing:

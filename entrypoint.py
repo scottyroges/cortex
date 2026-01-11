@@ -18,7 +18,7 @@ def main():
 
     if mode == "daemon":
         # Run HTTP server as daemon
-        from http_server import run_server
+        from src.http import run_server
         # Use port 8000 for MCP daemon (8080 reserved for debug/phase2)
         run_server(host="0.0.0.0", port=8000)
 
@@ -29,7 +29,7 @@ def main():
 
     elif mode == "stdio":
         # Original stdio MCP server (backward compatibility)
-        from server import mcp
+        from src.server import mcp
         mcp.run()
 
     else:

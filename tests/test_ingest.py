@@ -1,5 +1,5 @@
 """
-Tests for ingest.py
+Tests for ingest module
 """
 
 import json
@@ -8,29 +8,25 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_text_splitters import Language
 
-from ingest import (
-    _analyze_tree,
-    _generate_tree_fallback,
+from src.config import DEFAULT_IGNORE_PATTERNS
+from src.git import get_git_changed_files, get_head_commit, get_untracked_files, is_git_repo
+from src.ingest import (
     chunk_code_file,
-    cleanup_state_entries,
     compute_file_hash,
-    delete_file_chunks,
     extract_scope_from_chunk,
     generate_tree_structure,
     get_changed_files,
-    get_git_changed_files,
-    get_head_commit,
-    get_untracked_files,
     ingest_codebase,
     ingest_file,
-    is_git_repo,
-    load_state,
-    save_state,
     store_skeleton,
     walk_codebase,
 )
-from langchain_text_splitters import Language
+from src.ingest.skeleton import _analyze_tree, _generate_tree_fallback
+from src.state import load_state, save_state
+from src.storage import delete_file_chunks, get_or_create_collection
+from src.storage.gc import cleanup_state_entries
 
 
 class TestFileWalking:
@@ -343,7 +339,7 @@ class TestIngestion:
 
     def test_ingest_single_file(self, sample_python_file: Path, temp_chroma_client):
         """Test ingesting a single file."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "test_ingest")
 
@@ -364,7 +360,7 @@ class TestIngestion:
 
     def test_ingest_file_metadata(self, sample_python_file: Path, temp_chroma_client):
         """Test that ingestion adds correct metadata."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "test_meta")
 
@@ -386,7 +382,7 @@ class TestIngestion:
 
     def test_ingest_scrubs_secrets(self, file_with_secrets: Path, temp_chroma_client):
         """Test that secrets are scrubbed during ingestion."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "test_scrub")
 
@@ -408,7 +404,7 @@ class TestIngestion:
 
     def test_ingest_codebase(self, temp_dir: Path, temp_chroma_client):
         """Test full codebase ingestion."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         # Create test files
         (temp_dir / "main.py").write_text("def main(): pass")
@@ -434,7 +430,7 @@ class TestIngestion:
 
     def test_ingest_codebase_delta(self, temp_dir: Path, temp_chroma_client):
         """Test delta sync in codebase ingestion."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         # Create a subdirectory for code to avoid state file being picked up
         code_dir = temp_dir / "code"
@@ -479,7 +475,7 @@ class TestIngestion:
 
     def test_ingest_codebase_force_full(self, temp_dir: Path, temp_chroma_client):
         """Test force full re-ingestion."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         # Create a subdirectory for code to avoid state file being picked up
         code_dir = temp_dir / "code"
@@ -513,7 +509,7 @@ class TestIngestion:
 
     def test_ingest_empty_file(self, temp_dir: Path, temp_chroma_client):
         """Test that empty files are skipped."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         (temp_dir / "empty.py").write_text("")
 
@@ -547,7 +543,7 @@ class TestSkeleton:
 
         (temp_dir / "README.md").write_text("# Project")
 
-        from ingest import DEFAULT_IGNORE_PATTERNS
+        from src.config import DEFAULT_IGNORE_PATTERNS
 
         tree = _generate_tree_fallback(temp_dir, max_depth=10, ignore=DEFAULT_IGNORE_PATTERNS)
 
@@ -569,7 +565,7 @@ class TestSkeleton:
         nm_dir.mkdir()
         (nm_dir / "package.js").write_text("module.exports = {}")
 
-        from ingest import DEFAULT_IGNORE_PATTERNS
+        from src.config import DEFAULT_IGNORE_PATTERNS
 
         tree = _generate_tree_fallback(temp_dir, max_depth=10, ignore=DEFAULT_IGNORE_PATTERNS)
 
@@ -586,7 +582,7 @@ class TestSkeleton:
             current.mkdir()
             (current / f"file{i}.py").write_text(f"# level {i}")
 
-        from ingest import DEFAULT_IGNORE_PATTERNS
+        from src.config import DEFAULT_IGNORE_PATTERNS
 
         tree = _generate_tree_fallback(temp_dir, max_depth=2, ignore=DEFAULT_IGNORE_PATTERNS)
 
@@ -630,7 +626,7 @@ class TestSkeleton:
 
     def test_store_skeleton(self, temp_chroma_client):
         """Test skeleton storage in ChromaDB."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "test_skeleton")
 
@@ -661,7 +657,7 @@ class TestSkeleton:
 
     def test_ingest_codebase_creates_skeleton(self, temp_dir: Path, temp_chroma_client):
         """Test that ingest_codebase auto-generates skeleton."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         # Create test files
         (temp_dir / "main.py").write_text("def main(): pass")
@@ -919,7 +915,7 @@ class TestGarbageCollection:
 
     def test_delete_file_chunks(self, temp_dir: Path, temp_chroma_client):
         """Test deleting chunks for a file."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "test_gc")
 
@@ -946,7 +942,7 @@ class TestGarbageCollection:
 
     def test_delete_file_chunks_empty_list(self, temp_chroma_client):
         """Test that empty file list does nothing."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         collection = get_or_create_collection(temp_chroma_client, "test_gc_empty")
 
@@ -977,7 +973,7 @@ class TestStateFormat:
 
     def test_state_migration_old_to_new(self, temp_dir: Path, temp_chroma_client):
         """Test that old state format is migrated to new format."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         # Create old-format state file
         state_file = temp_dir / "state.json"
@@ -1027,7 +1023,7 @@ class TestStateFormat:
 
     def test_ingest_reports_delta_mode(self, temp_dir: Path, temp_chroma_client):
         """Test that ingestion reports which delta mode was used."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         code_dir = temp_dir / "code"
         code_dir.mkdir()
@@ -1050,7 +1046,7 @@ class TestStateFormat:
 
     def test_ingest_tracks_deleted_stats(self, temp_dir: Path, temp_chroma_client):
         """Test that ingestion tracks deletion stats."""
-        from rag_utils import get_or_create_collection
+        from src.storage import get_or_create_collection
 
         code_dir = temp_dir / "code"
         code_dir.mkdir()

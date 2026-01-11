@@ -1,0 +1,247 @@
+"""
+Debug Endpoints
+
+HTTP endpoints for database inspection and debugging.
+"""
+
+import time
+from typing import Any, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+
+from logging_config import get_logger
+from src.search import HybridSearcher, RerankerService
+from src.storage import get_chroma_client, get_or_create_collection
+
+logger = get_logger("http.debug")
+
+router = APIRouter()
+
+# Lazy-initialized resources
+_client = None
+_collection = None
+_searcher = None
+_reranker = None
+
+
+def get_collection():
+    """Get or create the ChromaDB collection."""
+    global _client, _collection
+    if _collection is None:
+        _client = get_chroma_client()
+        _collection = get_or_create_collection(_client)
+    return _collection
+
+
+def get_searcher():
+    """Get or create the hybrid searcher."""
+    global _searcher
+    if _searcher is None:
+        _searcher = HybridSearcher(get_collection())
+    return _searcher
+
+
+def get_reranker():
+    """Get or create the reranker."""
+    global _reranker
+    if _reranker is None:
+        _reranker = RerankerService()
+    return _reranker
+
+
+@router.get("/stats")
+def debug_stats() -> dict[str, Any]:
+    """
+    Get collection statistics.
+
+    Returns counts by project, type, and language.
+    """
+    logger.info("Debug stats requested")
+    collection = get_collection()
+
+    # Get all documents with metadata
+    results = collection.get(include=["metadatas"])
+
+    stats = {
+        "total_documents": len(results["ids"]),
+        "by_project": {},
+        "by_type": {},
+        "by_language": {},
+    }
+
+    for meta in results["metadatas"]:
+        # Count by project
+        project = meta.get("project", "unknown")
+        stats["by_project"][project] = stats["by_project"].get(project, 0) + 1
+
+        # Count by type
+        doc_type = meta.get("type", "unknown")
+        stats["by_type"][doc_type] = stats["by_type"].get(doc_type, 0) + 1
+
+        # Count by language (for code)
+        lang = meta.get("language")
+        if lang:
+            stats["by_language"][lang] = stats["by_language"].get(lang, 0) + 1
+
+    logger.debug(f"Stats: {stats['total_documents']} total docs")
+    return stats
+
+
+@router.get("/sample")
+def debug_sample(limit: int = Query(default=10, le=100)) -> list[dict[str, Any]]:
+    """
+    Get sample documents from the collection.
+
+    Args:
+        limit: Maximum number of documents to return (max 100)
+    """
+    logger.info(f"Debug sample requested: limit={limit}")
+    collection = get_collection()
+
+    results = collection.get(
+        limit=limit,
+        include=["documents", "metadatas"],
+    )
+
+    samples = []
+    for doc_id, doc, meta in zip(
+        results["ids"],
+        results["documents"],
+        results["metadatas"],
+    ):
+        samples.append({
+            "id": doc_id,
+            "content_preview": doc[:200] + "..." if len(doc) > 200 else doc,
+            "metadata": meta,
+        })
+
+    return samples
+
+
+@router.get("/list")
+def debug_list(
+    project: Optional[str] = None,
+    doc_type: Optional[str] = Query(default=None, alias="type"),
+    limit: int = Query(default=50, le=500),
+) -> list[dict[str, Any]]:
+    """
+    List documents with optional filtering.
+
+    Args:
+        project: Filter by project name
+        type: Filter by document type (code, note, commit)
+        limit: Maximum results
+    """
+    logger.info(f"Debug list requested: project={project}, type={doc_type}")
+    collection = get_collection()
+
+    # Build where filter
+    where_filter = None
+    if project or doc_type:
+        conditions = []
+        if project:
+            conditions.append({"project": project})
+        if doc_type:
+            conditions.append({"type": doc_type})
+
+        if len(conditions) == 1:
+            where_filter = conditions[0]
+        else:
+            where_filter = {"$and": conditions}
+
+    results = collection.get(
+        where=where_filter,
+        limit=limit,
+        include=["metadatas"],
+    )
+
+    return [
+        {"id": doc_id, "metadata": meta}
+        for doc_id, meta in zip(results["ids"], results["metadatas"])
+    ]
+
+
+@router.get("/get/{doc_id}")
+def debug_get(doc_id: str) -> dict[str, Any]:
+    """
+    Get a specific document by ID.
+
+    Args:
+        doc_id: Document ID
+    """
+    logger.info(f"Debug get requested: doc_id={doc_id}")
+    collection = get_collection()
+
+    results = collection.get(
+        ids=[doc_id],
+        include=["documents", "metadatas", "embeddings"],
+    )
+
+    if not results["ids"]:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    return {
+        "id": results["ids"][0],
+        "content": results["documents"][0],
+        "metadata": results["metadatas"][0],
+        "has_embedding": results["embeddings"] is not None and len(results["embeddings"]) > 0,
+    }
+
+
+@router.get("/search")
+def debug_search(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=20, le=100),
+    rerank: bool = Query(default=False),
+) -> dict[str, Any]:
+    """
+    Raw search for debugging (shows scores and timing).
+
+    Args:
+        q: Search query
+        limit: Maximum results
+        rerank: Whether to apply reranking
+    """
+    logger.info(f"Debug search: query='{q}', limit={limit}, rerank={rerank}")
+    start_time = time.time()
+
+    searcher = get_searcher()
+
+    # Rebuild index for accurate results
+    search_start = time.time()
+    results = searcher.search(q, top_k=limit, rebuild_index=True)
+    search_time = time.time() - search_start
+
+    response = {
+        "query": q,
+        "timing": {
+            "search_ms": round(search_time * 1000, 2),
+        },
+        "results": [],
+    }
+
+    if rerank and results:
+        rerank_start = time.time()
+        reranker = get_reranker()
+        results = reranker.rerank(q, results, top_k=limit)
+        rerank_time = time.time() - rerank_start
+        response["timing"]["rerank_ms"] = round(rerank_time * 1000, 2)
+
+    for r in results:
+        response["results"].append({
+            "id": r.get("id"),
+            "content_preview": r.get("text", "")[:200],
+            "metadata": r.get("meta", {}),
+            "scores": {
+                "rrf": r.get("rrf_score"),
+                "rerank": r.get("rerank_score"),
+                "vector_distance": r.get("vector_distance"),
+                "bm25": r.get("bm25_score"),
+            },
+        })
+
+    response["timing"]["total_ms"] = round((time.time() - start_time) * 1000, 2)
+    response["result_count"] = len(response["results"])
+
+    logger.debug(f"Debug search complete: {len(response['results'])} results in {response['timing']['total_ms']}ms")
+    return response
