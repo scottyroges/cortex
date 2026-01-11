@@ -22,7 +22,12 @@ cd Cortex
 docker build -t cortex .
 
 # Symlink wrapper script (auto-updates with git pull)
-ln -sf "$(pwd)/cortex" /usr/local/bin/cortex
+# Option 1: System-wide (requires sudo)
+sudo ln -sf "$(pwd)/cortex" /usr/local/bin/cortex
+
+# Option 2: User-local (no sudo, add ~/.local/bin to PATH if needed)
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/cortex" ~/.local/bin/cortex
 ```
 
 ### Configure Claude Code
