@@ -132,7 +132,10 @@ def load_state(state_file: Optional[str] = None) -> dict[str, str]:
     path = state_file or STATE_FILE
     if os.path.exists(path):
         with open(path, "r") as f:
-            return json.load(f)
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
     return {}
 
 

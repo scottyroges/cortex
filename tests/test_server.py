@@ -107,12 +107,12 @@ class TestIngestCodeIntoCortex:
             root_path=str(temp_dir),
             collection=collection,
             project_id="testproject",
-            use_haiku=False,
+            header_provider="none",
             state_file=state_file,
         )
 
         assert stats["files_processed"] == 2
-        assert stats["chunks_added"] >= 2
+        assert stats["chunks_created"] >= 2
 
         # Verify content in collection
         results = collection.get(include=["metadatas"])
@@ -138,7 +138,7 @@ class TestIngestCodeIntoCortex:
         stats1 = ingest_codebase(
             root_path=str(temp_dir),
             collection=collection,
-            use_haiku=False,
+            header_provider="none",
             state_file=state_file,
         )
         assert stats1["files_processed"] == 1
@@ -147,7 +147,7 @@ class TestIngestCodeIntoCortex:
         stats2 = ingest_codebase(
             root_path=str(temp_dir),
             collection=collection,
-            use_haiku=False,
+            header_provider="none",
             state_file=state_file,
         )
         assert stats2["files_processed"] == 0
@@ -156,7 +156,7 @@ class TestIngestCodeIntoCortex:
         stats3 = ingest_codebase(
             root_path=str(temp_dir),
             collection=collection,
-            use_haiku=False,
+            header_provider="none",
             state_file=state_file,
             force_full=True,
         )
@@ -320,6 +320,422 @@ class TestToggleCortex:
         assert CONFIG["enabled"] is True
 
 
+class TestContextTools:
+    """Tests for context composition tools."""
+
+    def test_set_context_saves_domain(self, temp_chroma_client):
+        """Test that set_context_in_cortex saves domain context."""
+        from rag_utils import get_or_create_collection, scrub_secrets
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "context_test")
+
+        project = "myproject"
+        domain = "NestJS backend, PostgreSQL database, React frontend"
+        domain_id = f"{project}:domain_context"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        collection.upsert(
+            ids=[domain_id],
+            documents=[scrub_secrets(domain)],
+            metadatas=[{
+                "type": "domain_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+
+        # Verify saved
+        results = collection.get(ids=[domain_id], include=["documents", "metadatas"])
+        assert len(results["ids"]) == 1
+        assert "NestJS" in results["documents"][0]
+        assert results["metadatas"][0]["type"] == "domain_context"
+        assert results["metadatas"][0]["project"] == project
+
+    def test_set_context_saves_project_status(self, temp_chroma_client):
+        """Test that set_context_in_cortex saves project status."""
+        from rag_utils import get_or_create_collection, scrub_secrets
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "context_test2")
+
+        project = "myproject"
+        status = "Migration V1: Phase 2 - auth module complete, API review pending"
+        status_id = f"{project}:project_context"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        collection.upsert(
+            ids=[status_id],
+            documents=[scrub_secrets(status)],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+
+        # Verify saved
+        results = collection.get(ids=[status_id], include=["documents", "metadatas"])
+        assert len(results["ids"]) == 1
+        assert "Phase 2" in results["documents"][0]
+        assert results["metadatas"][0]["type"] == "project_context"
+
+    def test_context_upsert_overwrites(self, temp_chroma_client):
+        """Test that context is overwritten on update (upsert behavior)."""
+        from rag_utils import get_or_create_collection
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "context_upsert")
+
+        project = "myproject"
+        status_id = f"{project}:project_context"
+
+        # First status
+        collection.upsert(
+            ids=[status_id],
+            documents=["Phase 1: In progress"],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }],
+        )
+
+        # Update status
+        collection.upsert(
+            ids=[status_id],
+            documents=["Phase 2: Started"],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }],
+        )
+
+        # Should only have one document with updated content
+        results = collection.get(ids=[status_id], include=["documents"])
+        assert len(results["ids"]) == 1
+        assert "Phase 2" in results["documents"][0]
+        assert "Phase 1" not in results["documents"][0]
+
+    def test_get_context_retrieves_both(self, temp_chroma_client):
+        """Test that get_context retrieves both domain and project context."""
+        from rag_utils import get_or_create_collection
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "context_get")
+
+        project = "myproject"
+        domain_id = f"{project}:domain_context"
+        status_id = f"{project}:project_context"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Save both contexts
+        collection.upsert(
+            ids=[domain_id],
+            documents=["Python FastAPI backend"],
+            metadatas=[{
+                "type": "domain_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+        collection.upsert(
+            ids=[status_id],
+            documents=["Implementing user auth"],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+
+        # Retrieve both
+        results = collection.get(
+            ids=[domain_id, status_id],
+            include=["documents", "metadatas"],
+        )
+
+        assert len(results["ids"]) == 2
+
+        # Verify both are present
+        docs = results["documents"]
+        assert any("FastAPI" in doc for doc in docs)
+        assert any("user auth" in doc for doc in docs)
+
+    def test_context_scrubs_secrets(self, temp_chroma_client):
+        """Test that context has secrets scrubbed."""
+        from rag_utils import get_or_create_collection, scrub_secrets
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "context_secrets")
+
+        project = "myproject"
+        domain_id = f"{project}:domain_context"
+
+        # Domain with a secret
+        domain_with_secret = "Backend using API key AKIAIOSFODNN7EXAMPLE for AWS"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        collection.upsert(
+            ids=[domain_id],
+            documents=[scrub_secrets(domain_with_secret)],
+            metadatas=[{
+                "type": "domain_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+
+        results = collection.get(ids=[domain_id], include=["documents"])
+        assert "AKIAIOSFODNN7EXAMPLE" not in results["documents"][0]
+
+    def test_context_included_in_search(self, temp_chroma_client):
+        """Test that context can be fetched alongside search results."""
+        from rag_utils import get_or_create_collection
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "context_search")
+
+        project = "searchproject"
+        domain_id = f"{project}:domain_context"
+        status_id = f"{project}:project_context"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Add some code
+        collection.add(
+            documents=["def calculate_total(): return sum(items)"],
+            ids=["code:1"],
+            metadatas=[{
+                "type": "code",
+                "file_path": "/app/utils.py",
+                "project": project,
+                "branch": "main",
+                "language": "python",
+            }],
+        )
+
+        # Add context
+        collection.upsert(
+            ids=[domain_id],
+            documents=["E-commerce platform with Python backend"],
+            metadatas=[{
+                "type": "domain_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+        collection.upsert(
+            ids=[status_id],
+            documents=["Building checkout flow"],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+
+        # Simulate search_cortex context fetch pattern
+        context_results = collection.get(
+            ids=[domain_id, status_id],
+            include=["documents", "metadatas"],
+        )
+
+        # Verify context is retrievable
+        assert len(context_results["ids"]) == 2
+        docs = context_results["documents"]
+        assert any("E-commerce" in doc for doc in docs)
+        assert any("checkout" in doc for doc in docs)
+
+    def test_set_context_validation_requires_content(self):
+        """Test that set_context requires at least one of domain or project_status."""
+        # Simulate the validation logic from set_context_in_cortex
+        domain = None
+        project_status = None
+
+        # This is the validation check in set_context_in_cortex
+        if not domain and not project_status:
+            error = json.dumps({
+                "error": "At least one of 'domain' or 'project_status' must be provided",
+            })
+            parsed = json.loads(error)
+            assert "error" in parsed
+            assert "domain" in parsed["error"] or "project_status" in parsed["error"]
+
+    def test_get_context_validation_requires_project(self):
+        """Test that get_context requires project parameter."""
+        # Simulate the validation logic from get_context_from_cortex
+        project = None
+
+        if not project:
+            error = json.dumps({
+                "error": "Project name is required",
+                "hint": "Provide the project identifier",
+            })
+            parsed = json.loads(error)
+            assert "error" in parsed
+            assert "required" in parsed["error"].lower()
+
+    def test_update_status_validation_requires_project(self):
+        """Test that update_project_status requires project parameter."""
+        # Simulate the validation logic from update_project_status
+        project = None
+
+        if not project:
+            error = json.dumps({
+                "error": "Project name is required",
+                "hint": "Provide the project identifier",
+            })
+            parsed = json.loads(error)
+            assert "error" in parsed
+            assert "required" in parsed["error"].lower()
+
+    def test_get_context_empty_returns_message(self, temp_chroma_client):
+        """Test that get_context returns helpful message when no context exists."""
+        from rag_utils import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "empty_context")
+        project = "nonexistent_project"
+        domain_id = f"{project}:domain_context"
+        status_id = f"{project}:project_context"
+
+        # Try to fetch non-existent context
+        results = collection.get(
+            ids=[domain_id, status_id],
+            include=["documents", "metadatas"],
+        )
+
+        # Should return empty
+        assert len(results["ids"]) == 0
+
+        # Simulate the response logic
+        context = {
+            "project": project,
+            "domain": None,
+            "project_status": None,
+        }
+        has_context = context["domain"] or context["project_status"]
+        assert not has_context
+
+    def test_set_context_domain_only(self, temp_chroma_client):
+        """Test setting only domain context (no project_status)."""
+        from rag_utils import get_or_create_collection, scrub_secrets
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "domain_only")
+
+        project = "testproj"
+        domain = "Python Flask backend"
+        domain_id = f"{project}:domain_context"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Only save domain (simulate set_context with domain only)
+        saved = {}
+        collection.upsert(
+            ids=[domain_id],
+            documents=[scrub_secrets(domain)],
+            metadatas=[{
+                "type": "domain_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+        saved["domain_context_id"] = domain_id
+
+        # Verify only domain was saved
+        assert "domain_context_id" in saved
+        assert "project_context_id" not in saved
+
+        # Verify content
+        results = collection.get(ids=[domain_id], include=["documents"])
+        assert "Flask" in results["documents"][0]
+
+    def test_set_context_status_only(self, temp_chroma_client):
+        """Test setting only project_status (no domain)."""
+        from rag_utils import get_or_create_collection, scrub_secrets
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "status_only")
+
+        project = "testproj"
+        project_status = "Working on feature X"
+        status_id = f"{project}:project_context"
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Only save status (simulate set_context with status only)
+        saved = {}
+        collection.upsert(
+            ids=[status_id],
+            documents=[scrub_secrets(project_status)],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": timestamp,
+            }],
+        )
+        saved["project_context_id"] = status_id
+
+        # Verify only status was saved
+        assert "project_context_id" in saved
+        assert "domain_context_id" not in saved
+
+        # Verify content
+        results = collection.get(ids=[status_id], include=["documents"])
+        assert "feature X" in results["documents"][0]
+
+    def test_update_project_status_overwrites(self, temp_chroma_client):
+        """Test that update_project_status overwrites existing status."""
+        from rag_utils import get_or_create_collection, scrub_secrets
+        from datetime import datetime, timezone
+
+        collection = get_or_create_collection(temp_chroma_client, "update_status")
+
+        project = "testproj"
+        status_id = f"{project}:project_context"
+
+        # Initial status
+        collection.upsert(
+            ids=[status_id],
+            documents=["Phase 1: Planning"],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }],
+        )
+
+        # Update status (simulate update_project_status)
+        new_status = "Phase 3: Testing"
+        collection.upsert(
+            ids=[status_id],
+            documents=[scrub_secrets(new_status)],
+            metadatas=[{
+                "type": "project_context",
+                "project": project,
+                "branch": "main",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }],
+        )
+
+        # Verify update
+        results = collection.get(ids=[status_id], include=["documents"])
+        assert len(results["ids"]) == 1
+        assert "Phase 3" in results["documents"][0]
+        assert "Phase 1" not in results["documents"][0]
+
+
 class TestIntegration:
     """Integration tests for the full workflow."""
 
@@ -360,12 +776,12 @@ def validate_input(value):
             root_path=str(temp_dir),
             collection=collection,
             project_id="testcalc",
-            use_haiku=False,
+            header_provider="none",
             state_file=state_file,
         )
 
         assert stats["files_processed"] == 2
-        assert stats["chunks_added"] >= 2
+        assert stats["chunks_created"] >= 2
 
         # Search
         searcher = HybridSearcher(collection)

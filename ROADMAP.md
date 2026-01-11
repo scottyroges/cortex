@@ -69,10 +69,12 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| Domain Context | Static tech stack config (e.g., "NestJS, Postgres") | ⬜ |
-| Project Context | Dynamic project status (e.g., "Migration V1: Phase 2 Blocked") | ⬜ |
-| `set_context_in_cortex` | Load domain + project context | ⬜ |
-| `update_project_status` | Update mutable project state | ⬜ |
+| Domain Context | Static tech stack config (e.g., "NestJS, Postgres") | ✅ |
+| Project Context | Dynamic project status (e.g., "Migration V1: Phase 2 Blocked") | ✅ |
+| `set_context_in_cortex` | Load domain + project context | ✅ |
+| `update_project_status` | Update mutable project state | ✅ |
+| `get_context_from_cortex` | Retrieve stored context | ✅ |
+| Context Auto-Injection | Context included in search_cortex results | ✅ |
 
 ### Universal Web Clipper
 
@@ -105,8 +107,9 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 | Tool | Arguments | Status |
 |------|-----------|--------|
 | `get_skeleton` | `project` | ✅ |
-| `set_context_in_cortex` | `domain, project` | ⬜ |
-| `update_project_status` | `status_text` | ⬜ |
+| `set_context_in_cortex` | `project, domain, project_status` | ✅ |
+| `update_project_status` | `status, project` | ✅ |
+| `get_context_from_cortex` | `project` | ✅ |
 | `ingest_web_to_cortex` | `url, content` | ⬜ |
 | `log_error_to_cortex` | `signature, fix` | ⬜ |
 | `solve_error_from_cortex` | `signature` | ⬜ |
