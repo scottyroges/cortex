@@ -59,7 +59,19 @@ log_error() {
 
 build_image() {
     log_info "Building Cortex Docker image..."
-    if docker build -t "$IMAGE_NAME" "$CORTEX_SRC_DIR" >&2; then
+
+    # Capture git commit and build time for version tracking
+    local git_commit
+    local build_time
+    git_commit=$(git -C "$CORTEX_SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log_info "Build info: commit=$git_commit, time=$build_time"
+
+    if docker build \
+        --build-arg "GIT_COMMIT=$git_commit" \
+        --build-arg "BUILD_TIME=$build_time" \
+        -t "$IMAGE_NAME" "$CORTEX_SRC_DIR" >&2; then
         log_info "Image built successfully"
     else
         log_error "Failed to build image"
@@ -181,8 +193,11 @@ daemon_status() {
         echo "Daemon is running"
         docker ps --filter "name=^${DAEMON_CONTAINER_NAME}$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
         echo ""
-        echo "Health check:"
-        curl -s "http://localhost:${DAEMON_PORT}/health" 2>/dev/null || echo "Failed to reach daemon"
+        echo "Build info:"
+        curl -s "http://localhost:${DAEMON_PORT}/info" 2>/dev/null || echo "Failed to reach daemon"
+        echo ""
+        echo ""
+        echo "Local HEAD: $(git -C "$CORTEX_SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
     else
         echo "Daemon is not running"
         exit 1

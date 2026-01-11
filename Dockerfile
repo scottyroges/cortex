@@ -2,6 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Build arguments for version tracking
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+# Set as environment variables for runtime access
+ENV CORTEX_GIT_COMMIT=$GIT_COMMIT
+ENV CORTEX_BUILD_TIME=$BUILD_TIME
+
 # Install git for branch detection and build-essential for Chroma/Numpy
 RUN apt-get update && apt-get install -y build-essential git && rm -rf /var/lib/apt/lists/*
 

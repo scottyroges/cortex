@@ -9,6 +9,7 @@ Start with CORTEX_HTTP=true or --http flag.
 """
 
 import hashlib
+import os
 import time
 import uuid
 from datetime import datetime
@@ -451,6 +452,26 @@ def save_note(request: NoteRequest) -> dict[str, Any]:
 def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+# Track server startup time
+_startup_time = datetime.utcnow().isoformat() + "Z"
+
+
+@app.get("/info")
+def info() -> dict[str, str]:
+    """
+    Build and runtime information.
+
+    Returns git commit, build time, and startup time for verifying
+    the daemon is running the expected code version.
+    """
+    return {
+        "git_commit": os.environ.get("CORTEX_GIT_COMMIT", "unknown"),
+        "build_time": os.environ.get("CORTEX_BUILD_TIME", "unknown"),
+        "startup_time": _startup_time,
+        "version": "1.0.0",
+    }
 
 
 # =============================================================================
