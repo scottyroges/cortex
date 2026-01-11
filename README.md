@@ -105,7 +105,7 @@ Set these in your MCP config's `env` block:
 | `CORTEX_DATA_PATH` | `~/.cortex` | Where to store Cortex data |
 | `CORTEX_HEADER_PROVIDER` | `none` | Header provider: `anthropic`, `claude-cli`, or `none` |
 | `CORTEX_DEBUG` | `false` | Enable debug logging |
-| `CORTEX_LOG_FILE` | - | Log file name (e.g., `debug.log`) |
+| `CORTEX_LOG_FILE` | `$CORTEX_DATA_PATH/cortex.log` | Log file path |
 | `CORTEX_HTTP` | `false` | Enable HTTP debug server |
 | `CORTEX_HTTP_PORT` | `8080` | HTTP server port |
 | `ANTHROPIC_API_KEY` | - | Required for `header_provider=anthropic` |
@@ -119,8 +119,7 @@ Set these in your MCP config's `env` block:
       "env": {
         "CORTEX_CODE_PATHS": "~/Projects,~/Work",
         "CORTEX_HEADER_PROVIDER": "claude-cli",
-        "CORTEX_DEBUG": "true",
-        "CORTEX_LOG_FILE": "debug.log"
+        "CORTEX_DEBUG": "true"
       }
     }
   }
@@ -152,16 +151,16 @@ Contextual headers add AI-generated summaries to each code chunk:
 
 ### Debug Logging
 
+Enable debug logging in your MCP config:
 ```json
 "env": {
-  "CORTEX_DEBUG": "true",
-  "CORTEX_LOG_FILE": "debug.log"
+  "CORTEX_DEBUG": "true"
 }
 ```
 
 Then tail the log:
 ```bash
-tail -f ~/.cortex/debug.log
+tail -f ~/.cortex/cortex.log
 ```
 
 ### HTTP Debug Server
@@ -183,6 +182,19 @@ Phase 2 endpoints (for CLI/Web Clipper):
 - `GET /search?q=X&limit=5` - Search with reranking
 - `POST /ingest` - Ingest web content
 - `POST /note` - Save a note
+
+## Troubleshooting
+
+### macOS Permission Popups
+
+If you see repeated "iTerm wants to access data from other applications" popups when the MCP server starts, grant Full Disk Access to your terminal and Docker:
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**
+2. Add these applications:
+   - **iTerm** (or your terminal app)
+   - **Docker** (or Docker Desktop)
+
+This allows the Docker build process to access the Cortex source directory without triggering macOS TCC (Transparency, Consent, and Control) prompts.
 
 ## Development
 

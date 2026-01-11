@@ -6,7 +6,7 @@ Provides RAG capabilities with ChromaDB, FlashRank reranking, and AST-aware chun
 
 Environment variables:
     CORTEX_DEBUG: Enable debug logging (default: false)
-    CORTEX_LOG_FILE: Log file path (default: stderr)
+    CORTEX_LOG_FILE: Log file path (default: $CORTEX_DATA_PATH/cortex.log)
     CORTEX_HTTP: Enable HTTP server for debugging (default: false)
 """
 
@@ -195,7 +195,7 @@ def search_cortex(
                 "project": meta.get("project", "unknown"),
                 "branch": meta.get("branch", "unknown"),
                 "language": meta.get("language", "unknown"),
-                "score": round(r.get("rerank_score", 0), 4),
+                "score": float(round(r.get("rerank_score", 0), 4)),
             }
             results.append(result)
 

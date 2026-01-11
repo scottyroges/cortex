@@ -384,7 +384,7 @@ class HybridSearcher:
                         "id": doc_id,
                         "text": doc,
                         "meta": meta,
-                        "vector_distance": dist,
+                        "vector_distance": float(dist),  # Convert potential numpy float
                     }
                 )
         logger.debug(f"Vector search: {len(formatted_vector)} results in {vector_time*1000:.1f}ms")
@@ -451,7 +451,7 @@ class RerankerService:
             results.append(
                 {
                     **original_doc,
-                    "rerank_score": r["score"],
+                    "rerank_score": float(r["score"]),  # Convert numpy float32 to Python float
                 }
             )
 

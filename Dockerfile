@@ -25,7 +25,7 @@ EXPOSE 8080
 # Optional env vars:
 #   CORTEX_HTTP=true            Enable HTTP server
 #   CORTEX_DEBUG=true           Enable debug logging
-#   CORTEX_LOG_FILE=path        Log to file (e.g., /root/.cortex/debug.log)
+#   CORTEX_LOG_FILE=path        Log file path (default: $CORTEX_DATA_PATH/cortex.log)
 #   CORTEX_HEADER_PROVIDER=X    Header provider: "anthropic", "claude-cli", or "none"
 #   CORTEX_DB_PATH=path         Custom database path
 ENTRYPOINT ["python", "server.py"]

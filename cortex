@@ -3,6 +3,7 @@
 # Cortex MCP Server Wrapper
 #
 # Handles Docker volume mounting based on simple environment variables.
+# Automatically builds the Docker image if it doesn't exist.
 #
 # Environment variables:
 #   CORTEX_CODE_PATHS    - Comma-separated list of code directories to mount
@@ -10,13 +11,38 @@
 #   CORTEX_DATA_PATH     - Where to store Cortex data (default: ~/.cortex)
 #   CORTEX_HEADER_PROVIDER - Header provider: "anthropic", "claude-cli", or "none"
 #   CORTEX_DEBUG         - Enable debug logging (true/false)
-#   CORTEX_LOG_FILE      - Log file path (relative to data path)
+#   CORTEX_LOG_FILE      - Log file path (default: $CORTEX_DATA_PATH/cortex.log)
 #   CORTEX_HTTP          - Enable HTTP server (true/false)
 #   CORTEX_HTTP_PORT     - HTTP port (default: 8080)
 #   ANTHROPIC_API_KEY    - Required for header_provider="anthropic"
 #
 
 set -e
+
+# --- Find the Cortex source directory ---
+# Follow symlinks to find the actual script location
+get_script_dir() {
+    local source="${BASH_SOURCE[0]}"
+    while [ -L "$source" ]; do
+        local dir="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ $source != /* ]] && source="$dir/$source"
+    done
+    cd -P "$(dirname "$source")" && pwd
+}
+
+CORTEX_SRC_DIR="$(get_script_dir)"
+
+# --- Build Docker image ---
+IMAGE_NAME="cortex"
+
+echo "Building Cortex Docker image..." >&2
+if docker build -t "$IMAGE_NAME" "$CORTEX_SRC_DIR" >&2; then
+    echo "Cortex image built successfully." >&2
+else
+    echo "Error: Failed to build Cortex image." >&2
+    exit 1
+fi
 
 # Defaults
 DATA_PATH="${CORTEX_DATA_PATH:-$HOME/.cortex}"
@@ -31,6 +57,7 @@ DOCKER_ARGS=(
     "run" "-i" "--rm"
     # Mount data directory
     "-v" "$DATA_PATH:$DATA_PATH"
+    "-e" "CORTEX_DATA_PATH=$DATA_PATH"
     "-e" "CORTEX_DB_PATH=$DATA_PATH/db"
 )
 
