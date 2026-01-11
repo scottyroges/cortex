@@ -116,3 +116,83 @@ def get_current_branch(path: str) -> str:
     """
     branch, is_git, _ = get_git_info(path)
     return branch if branch else "unknown"
+
+
+def get_commits_since(path: str, since_timestamp: str) -> int:
+    """
+    Count commits since a given timestamp.
+
+    Args:
+        path: Repository path
+        since_timestamp: ISO format timestamp
+
+    Returns:
+        Number of commits since timestamp
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", f"--since={since_timestamp}"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            return len([line for line in lines if line])
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return 0
+
+
+def get_merge_commits_since(path: str, since_timestamp: str) -> int:
+    """
+    Count merge commits since a given timestamp.
+
+    Args:
+        path: Repository path
+        since_timestamp: ISO format timestamp
+
+    Returns:
+        Number of merge commits since timestamp
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", "--merges", f"--since={since_timestamp}"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            return len([line for line in lines if line])
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return 0
+
+
+def count_tracked_files(path: str) -> int:
+    """
+    Count git-tracked files in the repository.
+
+    Args:
+        path: Repository path
+
+    Returns:
+        Number of tracked files
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            return len([line for line in lines if line])
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return 0

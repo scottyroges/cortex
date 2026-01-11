@@ -166,30 +166,31 @@ Refactored confusing context parameters to a clearer model:
 
 **Document IDs**: `{repository}:tech_stack`, `{repository}:initiative`
 
-### MCP Tool Redesign ⬜
+### MCP Tool Redesign ✅
 
-**Problem**: Current 10 tools are confusing - 3 are redundant, workflows unclear, no session entry point.
+Consolidated tools from 12 to 11, adding session entry point and removing redundant tools.
 
-**New Tool Set (8 tools)**:
+**Final Tool Set (11 tools)**:
 
 | Tool | Type | Purpose |
 |------|------|---------|
-| `orient_session` | High-level | **Entry point** - returns indexed status, skeleton, tech_stack, active_initiative |
+| `orient_session` | High-level | **NEW** - Entry point with staleness detection |
 | `search_cortex` | Atomic | Search memory for relevant context |
 | `ingest_code_into_cortex` | Atomic | Index a codebase |
 | `set_repo_context` | Atomic | Set static tech stack info |
 | `set_initiative` | Atomic | Set/update current workstream |
+| `get_context_from_cortex` | Atomic | Quick context retrieval |
 | `commit_to_cortex` | Atomic | Save session summary |
 | `save_note_to_cortex` | Atomic | Save notes/decisions |
-| `configure_cortex` | Atomic | Tune retrieval settings |
+| `configure_cortex` | Atomic | Tune retrieval settings + enable/disable |
+| `get_skeleton` | Atomic | File tree for path grounding |
+| `get_cortex_version` | Atomic | Version and rebuild detection |
 
-**Tools to Remove**:
-- `get_skeleton` - redundant, included in `orient_session` and `search_cortex`
-- `update_project_status` - replaced by `set_initiative`
-- `get_context_from_cortex` - redundant, included in `orient_session`
-- `toggle_cortex` - rarely used, can be a config flag instead
+**Tools Removed**:
+- `toggle_cortex` - absorbed into `configure_cortex(enabled=bool)`
+- `update_initiative_status` - redundant, use `set_initiative` directly
 
-**New Tool: `orient_session`**:
+**`orient_session` implementation**:
 
 ```python
 def orient_session(project_path: str) -> dict:
@@ -198,16 +199,16 @@ def orient_session(project_path: str) -> dict:
     Detects stale index and prompts for reindexing after merges.
 
     Returns:
+        project: str - Project name
+        branch: str - Current git branch
         indexed: bool - Is this repo indexed?
         last_indexed: str - When was it last indexed?
         file_count: int - How many files indexed?
         needs_reindex: bool - Is the index stale?
         reindex_reason: str - Why reindex is needed (if applicable)
-        skeleton: str - File tree structure
+        skeleton: dict - File tree structure (if available)
         tech_stack: str - Technologies and patterns (if set)
         active_initiative: dict - Current workstream (if any)
-            - name: str
-            - status: str
     """
 ```
 
@@ -219,6 +220,8 @@ def orient_session(project_path: str) -> dict:
 | File count diff | Indexed count vs files on disk | Files added/removed |
 | Branch switch | Current branch ≠ indexed branch | Context changed |
 | Merge detected | `git log --merges --since=last_indexed` | Feature branch merged |
+
+See `SCENARIOS.md` for detailed usage workflows.
 
 ---
 

@@ -301,22 +301,38 @@ class TestConfigureCortex:
         CONFIG["top_k_retrieve"] = 50
 
 
-class TestToggleCortex:
-    """Tests for toggle_cortex tool."""
+class TestConfigureEnabled:
+    """Tests for configure_cortex enabled parameter (replaces toggle_cortex)."""
 
-    def test_toggle_disable(self):
-        """Test disabling Cortex."""
+    def test_configure_disable(self):
+        """Test disabling Cortex via configure_cortex."""
+        import json
+
+        from src.tools import configure_cortex
         from src.tools.services import CONFIG
 
-        CONFIG["enabled"] = False
-        assert CONFIG["enabled"] is False
-
-    def test_toggle_enable(self):
-        """Test enabling Cortex."""
-        from src.tools.services import CONFIG
-
+        # Enable first
         CONFIG["enabled"] = True
+
+        result = json.loads(configure_cortex(enabled=False))
+
+        assert CONFIG["enabled"] is False
+        assert result["config"]["enabled"] is False
+
+    def test_configure_enable(self):
+        """Test enabling Cortex via configure_cortex."""
+        import json
+
+        from src.tools import configure_cortex
+        from src.tools.services import CONFIG
+
+        # Disable first
+        CONFIG["enabled"] = False
+
+        result = json.loads(configure_cortex(enabled=True))
+
         assert CONFIG["enabled"] is True
+        assert result["config"]["enabled"] is True
 
 
 class TestContextTools:
@@ -604,8 +620,8 @@ class TestContextTools:
             assert "error" in parsed
             assert "required" in parsed["error"].lower()
 
-    def test_update_initiative_status_validation_requires_repository(self):
-        """Test that update_initiative_status requires repository parameter."""
+    def test_set_initiative_validation_requires_repository(self):
+        """Test that set_initiative requires repository parameter."""
         repository = None
 
         if not repository:
@@ -677,8 +693,8 @@ class TestContextTools:
         assert results["metadatas"][0]["initiative_name"] == initiative_name
         assert results["metadatas"][0]["initiative_status"] == ""
 
-    def test_update_initiative_status_overwrites(self, temp_chroma_client):
-        """Test that update_initiative_status overwrites existing status."""
+    def test_set_initiative_status_overwrites(self, temp_chroma_client):
+        """Test that set_initiative overwrites existing status."""
         from datetime import datetime, timezone
 
         from src.security import scrub_secrets
@@ -704,7 +720,7 @@ class TestContextTools:
             }],
         )
 
-        # Update status (simulate update_initiative_status)
+        # Update status (simulate set_initiative with new status)
         new_status = "Phase 3: Testing"
         collection.upsert(
             ids=[initiative_id],

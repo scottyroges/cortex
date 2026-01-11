@@ -35,15 +35,29 @@ class MCPToolResult(BaseModel):
 
 MCP_TOOL_SCHEMAS = [
     {
+        "name": "orient_session",
+        "description": "Entry point for starting a session. Returns indexed status, skeleton, tech stack, active initiative, and staleness detection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_path": {
+                    "type": "string",
+                    "description": "Absolute path to the project repository",
+                },
+            },
+            "required": ["project_path"],
+        },
+    },
+    {
         "name": "search_cortex",
         "description": "Search the Cortex memory for relevant code, documentation, or notes.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Natural language search query"},
-                "scope": {"type": "string", "default": "global", "description": "Search scope"},
                 "project": {"type": "string", "description": "Optional project filter"},
                 "min_score": {"type": "number", "description": "Minimum relevance score (0-1)"},
+                "branch": {"type": "string", "description": "Optional branch filter"},
             },
             "required": ["query"],
         },
@@ -89,6 +103,60 @@ MCP_TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "set_repo_context",
+        "description": "Set static tech stack context for a repository.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier (e.g., 'Cortex', 'my-app')",
+                },
+                "tech_stack": {
+                    "type": "string",
+                    "description": "Technologies, patterns, architecture description",
+                },
+            },
+            "required": ["repository", "tech_stack"],
+        },
+    },
+    {
+        "name": "set_initiative",
+        "description": "Set or update the current initiative/workstream for a repository.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Initiative/epic name",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Current state/progress (optional)",
+                },
+            },
+            "required": ["repository", "name"],
+        },
+    },
+    {
+        "name": "get_context_from_cortex",
+        "description": "Get stored tech stack and initiative context for a repository.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier",
+                },
+            },
+            "required": ["repository"],
+        },
+    },
+    {
         "name": "configure_cortex",
         "description": "Configure Cortex runtime settings.",
         "inputSchema": {
@@ -99,18 +167,10 @@ MCP_TOOL_SCHEMAS = [
                 "top_k_retrieve": {"type": "integer", "description": "Candidates before reranking"},
                 "top_k_rerank": {"type": "integer", "description": "Results after reranking"},
                 "header_provider": {"type": "string", "description": "Header provider: anthropic, claude-cli, or none"},
+                "recency_boost": {"type": "boolean", "description": "Enable recency boosting for notes/commits"},
+                "recency_half_life_days": {"type": "number", "description": "Days until recency boost decays to ~0.5"},
+                "enabled": {"type": "boolean", "description": "Enable or disable Cortex memory system"},
             },
-        },
-    },
-    {
-        "name": "toggle_cortex",
-        "description": "Enable or disable Cortex memory system.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "enabled": {"type": "boolean", "description": "True to enable, False to disable"},
-            },
-            "required": ["enabled"],
         },
     },
     {
@@ -144,20 +204,26 @@ def _get_tool_map():
     from src.tools import (
         commit_to_cortex,
         configure_cortex,
+        get_context_from_cortex,
         get_cortex_version,
         get_skeleton,
         ingest_code_into_cortex,
+        orient_session,
         save_note_to_cortex,
         search_cortex,
-        toggle_cortex,
+        set_initiative,
+        set_repo_context,
     )
     return {
+        "orient_session": orient_session,
         "search_cortex": search_cortex,
         "ingest_code_into_cortex": ingest_code_into_cortex,
         "commit_to_cortex": commit_to_cortex,
         "save_note_to_cortex": save_note_to_cortex,
+        "set_repo_context": set_repo_context,
+        "set_initiative": set_initiative,
+        "get_context_from_cortex": get_context_from_cortex,
         "configure_cortex": configure_cortex,
-        "toggle_cortex": toggle_cortex,
         "get_skeleton": get_skeleton,
         "get_cortex_version": get_cortex_version,
     }

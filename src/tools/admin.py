@@ -10,7 +10,6 @@ from typing import Optional
 
 from logging_config import get_logger
 from src.git import get_current_branch
-from src.storage import get_collection_stats
 from src.tools.services import CONFIG, get_collection, get_repo_path
 
 logger = get_logger("tools.admin")
@@ -24,6 +23,7 @@ def configure_cortex(
     header_provider: Optional[str] = None,
     recency_boost: Optional[bool] = None,
     recency_half_life_days: Optional[float] = None,
+    enabled: Optional[bool] = None,
 ) -> str:
     """
     Configure Cortex runtime settings.
@@ -36,11 +36,16 @@ def configure_cortex(
         header_provider: Provider for contextual headers: "anthropic", "claude-cli", or "none"
         recency_boost: Enable recency boosting for notes/commits (newer = higher rank)
         recency_half_life_days: Days until recency boost decays to ~0.5 (default 30)
+        enabled: Enable or disable Cortex memory system (for A/B testing)
 
     Returns:
         JSON with updated configuration
     """
     changes = []
+
+    if enabled is not None:
+        CONFIG["enabled"] = enabled
+        changes.append(f"enabled={enabled}")
     if min_score is not None:
         CONFIG["min_score"] = max(0.0, min(1.0, min_score))
         changes.append(f"min_score={CONFIG['min_score']}")
@@ -80,39 +85,6 @@ def configure_cortex(
     return json.dumps({
         "status": "configured",
         "config": CONFIG,
-    }, indent=2)
-
-
-def toggle_cortex(enabled: bool) -> str:
-    """
-    Enable or disable Cortex memory system.
-
-    When disabled, search_cortex will return empty results.
-    Use this for A/B testing memory vs. no-memory performance.
-
-    Args:
-        enabled: True to enable, False to disable
-
-    Returns:
-        JSON with current status
-    """
-    CONFIG["enabled"] = enabled
-    logger.info(f"Cortex {'enabled' if enabled else 'disabled'}")
-
-    # Also return stats when enabled
-    stats = {}
-    if enabled:
-        try:
-            collection = get_collection()
-            stats = get_collection_stats(collection)
-            logger.debug(f"Stats: {stats}")
-        except Exception:
-            pass
-
-    return json.dumps({
-        "status": "enabled" if enabled else "disabled",
-        "enabled": enabled,
-        "stats": stats,
     }, indent=2)
 
 

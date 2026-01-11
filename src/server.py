@@ -24,12 +24,11 @@ from src.tools import (
     get_cortex_version,
     get_skeleton,
     ingest_code_into_cortex,
+    orient_session,
     save_note_to_cortex,
     search_cortex,
     set_initiative,
     set_repo_context,
-    toggle_cortex,
-    update_initiative_status,
 )
 
 # Initialize logging
@@ -41,6 +40,9 @@ logger = get_logger("server")
 mcp = FastMCP("Cortex")
 
 # --- Register Tools ---
+
+# Session
+mcp.tool()(orient_session)
 
 # Search
 mcp.tool()(search_cortex)
@@ -55,12 +57,10 @@ mcp.tool()(commit_to_cortex)
 # Context
 mcp.tool()(set_repo_context)
 mcp.tool()(set_initiative)
-mcp.tool()(update_initiative_status)
 mcp.tool()(get_context_from_cortex)
 
 # Admin
 mcp.tool()(configure_cortex)
-mcp.tool()(toggle_cortex)
 mcp.tool()(get_cortex_version)
 mcp.tool()(get_skeleton)
 
