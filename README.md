@@ -13,7 +13,7 @@ A local, privacy-first memory system for Claude Code. Provides RAG capabilities 
 
 ## Quick Start
 
-### Install
+### 1. Install
 
 ```bash
 # Clone and build
@@ -30,31 +30,23 @@ mkdir -p ~/.local/bin
 ln -sf "$(pwd)/cortex" ~/.local/bin/cortex
 ```
 
-### Configure Claude Code
+### 2. Configure
 
-**Option 1: CLI (recommended)**
+Run the interactive setup:
+
 ```bash
-claude mcp add -s user -e CORTEX_CODE_PATHS=~/Projects,~/Work -- cortex cortex
+cortex init
 ```
 
-**Option 2: Manual config**
+This creates `~/.cortex/settings.json` with your code paths and preferences.
 
-Add to `~/.claude.json`:
+### 3. Add to Claude Code
 
-```json
-{
-  "mcpServers": {
-    "cortex": {
-      "command": "cortex",
-      "env": {
-        "CORTEX_CODE_PATHS": "~/Projects,~/Work"
-      }
-    }
-  }
-}
+```bash
+claude mcp add cortex cortex
 ```
 
-Then restart Claude Code. The wrapper handles Docker mounting automatically.
+Then restart Claude Code. That's it!
 
 ## Daemon Management
 
@@ -97,6 +89,7 @@ You can also check from within a Claude Code session using the `get_cortex_versi
 | `configure_cortex` | Adjust min_score, verbose mode, top_k settings |
 | `toggle_cortex` | Enable/disable for A/B testing |
 | `get_cortex_version` | Check daemon version and if rebuild is needed |
+| `get_skeleton` | Get file tree structure for a project |
 
 ## Supported Languages (AST Chunking)
 
@@ -126,36 +119,50 @@ Files with unsupported extensions are still indexed using generic text splitting
 
 ## Configuration
 
-### Environment Variables
+### Settings File
 
-Set these in your MCP config's `env` block:
+Cortex configuration lives in `~/.cortex/settings.json`. Create it with `cortex init` or edit manually:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CORTEX_CODE_PATHS` | - | Comma-separated code directories (e.g., `~/Projects,~/Work`) |
-| `CORTEX_DATA_PATH` | `~/.cortex` | Where to store Cortex data |
-| `CORTEX_HEADER_PROVIDER` | `none` | Header provider: `anthropic`, `claude-cli`, or `none` |
-| `CORTEX_DEBUG` | `false` | Enable debug logging |
-| `CORTEX_LOG_FILE` | `$CORTEX_DATA_PATH/cortex.log` | Log file path |
-| `CORTEX_HTTP` | `false` | Enable HTTP debug server |
-| `CORTEX_HTTP_PORT` | `8080` | HTTP server port |
-| `ANTHROPIC_API_KEY` | - | Required for `header_provider=anthropic` |
-
-**Example with all options** (in `~/.claude.json`):
 ```json
 {
-  "mcpServers": {
-    "cortex": {
-      "command": "cortex",
-      "env": {
-        "CORTEX_CODE_PATHS": "~/Projects,~/Work",
-        "CORTEX_HEADER_PROVIDER": "claude-cli",
-        "CORTEX_DEBUG": "true"
-      }
-    }
-  }
+  "code_paths": ["~/Projects", "~/Work"],
+  "header_provider": "none",
+  "debug": false
 }
 ```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `code_paths` | string[] | `[]` | Directories containing code to index |
+| `header_provider` | string | `"none"` | `"none"`, `"claude-cli"`, or `"anthropic"` |
+| `debug` | bool | `false` | Enable debug logging |
+
+### Managing Configuration
+
+```bash
+# View current settings
+cortex config
+
+# Edit settings in your $EDITOR
+cortex config edit
+```
+
+After changing settings, restart the daemon:
+```bash
+cortex daemon restart
+```
+
+### Environment Variable Overrides
+
+Environment variables can override settings.json (useful for CI/testing):
+
+| Variable | Description |
+|----------|-------------|
+| `CORTEX_CODE_PATHS` | Comma-separated code directories |
+| `CORTEX_HEADER_PROVIDER` | Header provider |
+| `CORTEX_DEBUG` | Enable debug logging |
+| `CORTEX_DATA_PATH` | Data directory (default: `~/.cortex`) |
+| `ANTHROPIC_API_KEY` | Required for `header_provider=anthropic` |
 
 ### Runtime Settings
 
@@ -182,25 +189,22 @@ Contextual headers add AI-generated summaries to each code chunk:
 
 ### Debug Logging
 
-Enable debug logging in your MCP config:
+Enable debug logging in `~/.cortex/settings.json`:
 ```json
-"env": {
-  "CORTEX_DEBUG": "true"
+{
+  "debug": true
 }
 ```
 
-Then tail the log:
+Then restart the daemon and tail the log:
 ```bash
+cortex daemon restart
 tail -f ~/.cortex/cortex.log
 ```
 
 ### HTTP Debug Server
 
-```json
-"env": {
-  "CORTEX_HTTP": "true"
-}
-```
+The HTTP debug server runs on port 8080 by default when the daemon is running.
 
 Debug endpoints:
 - `GET /debug/stats` - Collection statistics by project/type/language

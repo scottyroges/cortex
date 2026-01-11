@@ -4,6 +4,9 @@
 #
 # Usage:
 #   cortex              - Default: auto-start daemon if needed, run bridge
+#   cortex init         - Interactive setup, creates ~/.cortex/settings.json
+#   cortex config       - Show current configuration
+#   cortex config edit  - Open settings.json in $EDITOR
 #   cortex daemon start - Start the daemon
 #   cortex daemon stop  - Stop the daemon
 #   cortex daemon restart - Restart the daemon
@@ -11,12 +14,15 @@
 #   cortex daemon logs  - View daemon logs
 #   cortex stdio        - Run in legacy stdio mode (no daemon)
 #
-# Environment variables:
+# Configuration:
+#   Settings are stored in ~/.cortex/settings.json
+#   Run 'cortex init' to create this file interactively.
+#
+# Environment variables (override settings.json):
 #   CORTEX_CODE_PATHS    - Comma-separated list of code directories to mount
 #   CORTEX_DATA_PATH     - Where to store Cortex data (default: ~/.cortex)
 #   CORTEX_HEADER_PROVIDER - Header provider: "anthropic", "claude-cli", or "none"
 #   CORTEX_DEBUG         - Enable debug logging (true/false)
-#   CORTEX_LOG_FILE      - Log file path
 #   CORTEX_DAEMON_PORT   - Daemon port (default: 8000)
 #   ANTHROPIC_API_KEY    - Required for header_provider="anthropic"
 #
@@ -46,6 +52,81 @@ get_script_dir() {
 }
 
 CORTEX_SRC_DIR="$(get_script_dir)"
+
+# Settings file location
+SETTINGS_FILE="$DATA_PATH/settings.json"
+
+# Settings values (loaded from file, can be overridden by env vars)
+SETTINGS_CODE_PATHS=""
+SETTINGS_HEADER_PROVIDER=""
+SETTINGS_DEBUG=""
+
+# Track env var overrides (for display purposes)
+ENV_OVERRIDE_CODE_PATHS=""
+ENV_OVERRIDE_HEADER_PROVIDER=""
+ENV_OVERRIDE_DEBUG=""
+
+load_settings() {
+    # Capture original env vars before loading settings
+    local orig_code_paths="$CODE_PATHS"
+    local orig_header_provider="$CORTEX_HEADER_PROVIDER"
+    local orig_debug="$CORTEX_DEBUG"
+
+    # Load settings from ~/.cortex/settings.json if it exists
+    if [ -f "$SETTINGS_FILE" ]; then
+        # Parse JSON using python3 (available on most systems)
+        local settings
+        settings=$(python3 -c "
+import json
+import sys
+try:
+    with open('$SETTINGS_FILE') as f:
+        s = json.load(f)
+    # Output as shell-friendly format
+    paths = s.get('code_paths', [])
+    if isinstance(paths, list):
+        print('CODE_PATHS=' + ','.join(paths))
+    print('HEADER_PROVIDER=' + str(s.get('header_provider', '')))
+    print('DEBUG=' + str(s.get('debug', '')).lower())
+except Exception as e:
+    print('ERROR=' + str(e), file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null)
+
+        if [ $? -eq 0 ]; then
+            # Parse the output
+            while IFS='=' read -r key value; do
+                case "$key" in
+                    CODE_PATHS) SETTINGS_CODE_PATHS="$value" ;;
+                    HEADER_PROVIDER) SETTINGS_HEADER_PROVIDER="$value" ;;
+                    DEBUG) SETTINGS_DEBUG="$value" ;;
+                esac
+            done <<< "$settings"
+        fi
+    fi
+
+    # Apply settings (env vars override settings file)
+    if [ -z "$CODE_PATHS" ] && [ -n "$SETTINGS_CODE_PATHS" ]; then
+        CODE_PATHS="$SETTINGS_CODE_PATHS"
+    elif [ -n "$orig_code_paths" ] && [ -n "$SETTINGS_CODE_PATHS" ]; then
+        ENV_OVERRIDE_CODE_PATHS="true"
+    fi
+
+    if [ -z "$CORTEX_HEADER_PROVIDER" ] && [ -n "$SETTINGS_HEADER_PROVIDER" ]; then
+        CORTEX_HEADER_PROVIDER="$SETTINGS_HEADER_PROVIDER"
+    elif [ -n "$orig_header_provider" ] && [ -n "$SETTINGS_HEADER_PROVIDER" ]; then
+        ENV_OVERRIDE_HEADER_PROVIDER="true"
+    fi
+
+    if [ -z "$CORTEX_DEBUG" ] && [ -n "$SETTINGS_DEBUG" ]; then
+        CORTEX_DEBUG="$SETTINGS_DEBUG"
+    elif [ -n "$orig_debug" ] && [ -n "$SETTINGS_DEBUG" ]; then
+        ENV_OVERRIDE_DEBUG="true"
+    fi
+}
+
+# Load settings on script start
+load_settings
 
 # --- Helper Functions ---
 
@@ -213,6 +294,190 @@ daemon_logs() {
     fi
 }
 
+# --- Configuration Commands ---
+
+init_settings() {
+    echo "Cortex Setup"
+    echo "============"
+    echo ""
+    echo "This will create ~/.cortex/settings.json"
+    echo ""
+
+    # Ensure data directory exists
+    mkdir -p "$DATA_PATH"
+
+    # Collect code paths
+    echo "Enter the directories containing code you want to index."
+    echo "You can enter multiple paths, one per line."
+    echo "Press Enter on an empty line when done."
+    echo ""
+    echo "Examples:"
+    echo "  ~/Projects"
+    echo "  ~/Work"
+    echo "  /path/to/specific/repo"
+    echo ""
+
+    local paths=()
+    while true; do
+        read -r -p "Code path (or Enter to finish): " path
+        if [ -z "$path" ]; then
+            break
+        fi
+        # Expand ~ to $HOME for validation
+        local expanded_path="${path/#\~/$HOME}"
+        if [ -d "$expanded_path" ]; then
+            paths+=("$path")
+            echo "  Added: $path"
+        else
+            echo "  Warning: Directory does not exist: $path"
+            read -r -p "  Add anyway? [y/N]: " confirm
+            if [[ "$confirm" =~ ^[Yy] ]]; then
+                paths+=("$path")
+                echo "  Added: $path"
+            fi
+        fi
+    done
+
+    if [ ${#paths[@]} -eq 0 ]; then
+        echo ""
+        echo "Warning: No code paths configured. You can add them later with:"
+        echo "  cortex config edit"
+        echo ""
+    fi
+
+    # Header provider
+    echo ""
+    echo "Header Provider (adds AI-generated summaries to code chunks):"
+    echo "  none      - No headers (fastest, recommended)"
+    echo "  claude-cli - Uses Claude CLI (requires claude to be installed)"
+    echo "  anthropic  - Uses Anthropic API (requires ANTHROPIC_API_KEY)"
+    echo ""
+    read -r -p "Header provider [none]: " header_provider
+    header_provider="${header_provider:-none}"
+
+    if [[ ! "$header_provider" =~ ^(none|claude-cli|anthropic)$ ]]; then
+        echo "Invalid option, using 'none'"
+        header_provider="none"
+    fi
+
+    # Debug mode
+    echo ""
+    read -r -p "Enable debug logging? [y/N]: " debug_input
+    local debug="false"
+    if [[ "$debug_input" =~ ^[Yy] ]]; then
+        debug="true"
+    fi
+
+    # Build JSON
+    local paths_json="[]"
+    if [ ${#paths[@]} -gt 0 ]; then
+        paths_json=$(printf '%s\n' "${paths[@]}" | python3 -c "
+import json, sys
+paths = [line.strip() for line in sys.stdin if line.strip()]
+print(json.dumps(paths))
+")
+    fi
+
+    # Write settings file
+    python3 -c "
+import json
+settings = {
+    'code_paths': $paths_json,
+    'header_provider': '$header_provider',
+    'debug': $debug
+}
+with open('$SETTINGS_FILE', 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+"
+
+    echo ""
+    echo "Settings saved to: $SETTINGS_FILE"
+    echo ""
+    cat "$SETTINGS_FILE"
+    echo ""
+
+    # Check if daemon needs restart
+    if is_daemon_running; then
+        echo ""
+        echo "Note: Daemon is running. Restart it to apply changes:"
+        echo "  cortex daemon restart"
+    fi
+
+    echo ""
+    echo "Next steps:"
+    echo "  1. Add Cortex to Claude Code:"
+    echo "     claude mcp add cortex cortex"
+    echo ""
+    echo "  2. Restart Claude Code to load the MCP server"
+    echo ""
+}
+
+show_config() {
+    echo "Cortex Configuration"
+    echo "===================="
+    echo ""
+    echo "Settings file: $SETTINGS_FILE"
+    echo ""
+
+    if [ -f "$SETTINGS_FILE" ]; then
+        echo "Current settings:"
+        cat "$SETTINGS_FILE"
+    else
+        echo "No settings file found."
+        echo ""
+        echo "Run 'cortex init' to create one."
+    fi
+
+    echo ""
+    echo "Active configuration (after env var overrides):"
+    echo "  code_paths: ${CODE_PATHS:-<not set>}"
+    echo "  header_provider: ${CORTEX_HEADER_PROVIDER:-<not set>}"
+    echo "  debug: ${CORTEX_DEBUG:-<not set>}"
+    echo "  data_path: $DATA_PATH"
+    echo ""
+
+    # Show any env var overrides
+    if [ -n "$ENV_OVERRIDE_CODE_PATHS" ]; then
+        echo "Note: CORTEX_CODE_PATHS env var is overriding settings.json"
+    fi
+    if [ -n "$ENV_OVERRIDE_HEADER_PROVIDER" ]; then
+        echo "Note: CORTEX_HEADER_PROVIDER env var is overriding settings.json"
+    fi
+    if [ -n "$ENV_OVERRIDE_DEBUG" ]; then
+        echo "Note: CORTEX_DEBUG env var is overriding settings.json"
+    fi
+}
+
+edit_config() {
+    if [ ! -f "$SETTINGS_FILE" ]; then
+        echo "No settings file found. Creating default..."
+        mkdir -p "$DATA_PATH"
+        echo '{
+  "code_paths": [],
+  "header_provider": "none",
+  "debug": false
+}' > "$SETTINGS_FILE"
+    fi
+
+    local editor="${EDITOR:-${VISUAL:-vi}}"
+    echo "Opening $SETTINGS_FILE with $editor..."
+    "$editor" "$SETTINGS_FILE"
+
+    # Validate JSON after editing
+    if python3 -c "import json; json.load(open('$SETTINGS_FILE'))" 2>/dev/null; then
+        echo "Settings file is valid JSON."
+        if is_daemon_running; then
+            echo ""
+            echo "Note: Restart daemon to apply changes:"
+            echo "  cortex daemon restart"
+        fi
+    else
+        echo "Warning: Settings file contains invalid JSON!"
+        echo "Please fix the syntax errors."
+    fi
+}
+
 run_bridge() {
     # Ensure daemon is running
     if ! is_daemon_running; then
@@ -274,6 +539,23 @@ case "${1:-}" in
                 ;;
             *)
                 echo "Usage: cortex daemon {start|stop|restart|status|logs|rebuild}" >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    init)
+        init_settings
+        ;;
+    config)
+        case "${2:-}" in
+            edit)
+                edit_config
+                ;;
+            ""|show)
+                show_config
+                ;;
+            *)
+                echo "Usage: cortex config [show|edit]" >&2
                 exit 1
                 ;;
         esac
