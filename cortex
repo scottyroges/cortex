@@ -437,8 +437,8 @@ settings = {
     'data_path': '$data_path',
     'code_paths': $paths_json,
     'header_provider': '$header_provider',
-    'debug': $debug,
-    'http_port': $http_port
+    'debug': '$debug'.lower() == 'true',
+    'http_port': int('$http_port')
 }
 with open('$SETTINGS_FILE', 'w') as f:
     json.dump(settings, f, indent=2)
