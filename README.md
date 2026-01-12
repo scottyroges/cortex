@@ -38,10 +38,10 @@ cortex init
 ```
 
 This will ask you for:
-- **Data directory**: Where to store Cortex data (default: `~/.cortex`)
 - **Code paths**: Directories containing code to index
 - **Header provider**: AI-generated summaries (none/claude-cli/anthropic)
 - **Debug mode**: Enable verbose logging
+- **Daemon port**: Port for MCP communication (default: 8000)
 - **HTTP port**: Port for debug server and CLI (default: 8080)
 
 ### 3. Start the Daemon
@@ -64,24 +64,24 @@ Then restart Claude Code. That's it!
 
 ### Settings File
 
-Cortex configuration lives in `<data_path>/settings.json` (default: `~/.cortex/settings.json`). Create it with `cortex init` or edit manually:
+Cortex configuration lives at `~/.cortex/settings.json`. Create it with `cortex init` or edit manually:
 
 ```json
 {
-  "data_path": "~/.cortex",
   "code_paths": ["~/Projects", "~/Work"],
   "header_provider": "none",
   "debug": false,
+  "daemon_port": 8000,
   "http_port": 8080
 }
 ```
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `data_path` | string | `"~/.cortex"` | Where to store Cortex data (database, logs) |
 | `code_paths` | string[] | `[]` | Directories containing code to index |
 | `header_provider` | string | `"none"` | `"none"`, `"claude-cli"`, or `"anthropic"` |
 | `debug` | bool | `false` | Enable debug logging |
+| `daemon_port` | int | `8000` | Daemon port for MCP communication |
 | `http_port` | int | `8080` | HTTP debug server port |
 
 ### Managing Configuration
@@ -105,12 +105,11 @@ Environment variables can override settings.json (useful for CI/testing):
 
 | Variable | Description |
 |----------|-------------|
-| `CORTEX_DATA_PATH` | Data directory (default: `~/.cortex`) |
 | `CORTEX_CODE_PATHS` | Comma-separated code directories |
 | `CORTEX_HEADER_PROVIDER` | Header provider |
 | `CORTEX_DEBUG` | Enable debug logging |
+| `CORTEX_DAEMON_PORT` | Daemon port (default: `8000`) |
 | `CORTEX_HTTP_PORT` | HTTP debug server port (default: `8080`) |
-| `CORTEX_DAEMON_PORT` | Internal daemon port (default: `8000`) |
 | `ANTHROPIC_API_KEY` | Required for `header_provider=anthropic` |
 
 ### Header Providers
