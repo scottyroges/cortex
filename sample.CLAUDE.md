@@ -5,6 +5,7 @@
 | `cortex>> search <query>` | Search memory for code, notes, decisions |
 | `cortex>> save <content>` | Save a note, decision, or learning |
 | `cortex>> ingest <path>` | Index a codebase into memory |
+| `cortex>> ingest <path> --include "src/**"` | Selective ingestion (only matching paths) |
 | `cortex>> skeleton` | Show project file structure |
 | `cortex>> status` | Check if Cortex daemon is running |
 

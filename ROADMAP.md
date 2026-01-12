@@ -54,6 +54,13 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 | `pause_initiative` | Pause current work, save state for later | ⬜ |
 | Initiative History | Track initiative lifecycle: created → active → paused → completed | ⬜ |
 
+### Ingestion
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Selective Ingestion | Index specific paths/globs instead of entire codebase (e.g., `src/api/**`, `packages/auth`) | ✅ |
+| Include/Exclude Patterns | Support `.cortexignore` or config-based patterns for fine-grained control | ✅ |
+
 ### Performance & UX
 
 | Feature | Description | Status |

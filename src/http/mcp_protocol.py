@@ -71,6 +71,16 @@ MCP_TOOL_SCHEMAS = [
                 "path": {"type": "string", "description": "Absolute path to codebase root"},
                 "project_name": {"type": "string", "description": "Optional project identifier"},
                 "force_full": {"type": "boolean", "default": False, "description": "Force full re-ingestion"},
+                "include_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Glob patterns for selective ingestion. Only files matching at least one pattern are indexed (e.g., ['src/**', 'tests/**'])",
+                },
+                "use_cortexignore": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Load ignore patterns from global ~/.cortex/cortexignore and project .cortexignore files",
+                },
             },
             "required": ["path"],
         },

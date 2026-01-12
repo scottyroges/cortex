@@ -108,7 +108,36 @@ This document describes the primary workflows for how Claude Code interacts with
 
 ---
 
-## Scenario 8: Debugging/Admin
+## Scenario 8: Selective Ingestion (Large Codebases)
+
+**Context:** User has a large monorepo and only wants to index specific parts.
+
+**Problem:** Full indexing is slow and includes irrelevant code.
+
+**Flow (selective paths):**
+1. `ingest_code_into_cortex(path, include_patterns=["services/api/**", "packages/auth/**"])` - Index only specific directories
+
+**Flow (using cortexignore):**
+1. Create `~/.cortex/cortexignore` for global exclusions (all projects)
+2. Create `<project>/.cortexignore` for project-specific exclusions
+3. `ingest_code_into_cortex(path)` - Automatically respects both ignore files
+
+**Example `.cortexignore`:**
+```
+# Large generated files
+*.pb.go
+*_generated.py
+
+# Test fixtures
+fixtures/
+test_data/
+```
+
+**Tools Used:** `ingest_code_into_cortex`
+
+---
+
+## Scenario 9: Debugging/Admin
 
 **Context:** User needs to check Cortex status or adjust behavior.
 
@@ -136,6 +165,7 @@ This document describes the primary workflows for how Claude Code interacts with
 | Saving progress | `commit_to_cortex`, `set_initiative` |
 | Capturing research | `save_note_to_cortex` |
 | Quick context | `get_context_from_cortex`, `get_skeleton` |
+| Selective ingestion | `ingest_code_into_cortex` (with `include_patterns` or `.cortexignore`) |
 | Admin/debug | `get_cortex_version`, `configure_cortex` |
 
 ---

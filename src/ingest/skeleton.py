@@ -4,6 +4,7 @@ Project Skeleton Generation
 Generate and store tree structure for file-path grounding.
 """
 
+import fnmatch
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Optional
 import chromadb
 
 from logging_config import get_logger
-from src.config import DEFAULT_IGNORE_PATTERNS
+from src.config import load_ignore_patterns
 
 logger = get_logger("ingest.skeleton")
 
@@ -21,42 +22,55 @@ def generate_tree_structure(
     root_path: str,
     max_depth: int = 10,
     ignore_patterns: Optional[set[str]] = None,
+    include_patterns: Optional[list[str]] = None,
+    use_cortexignore: bool = True,
 ) -> tuple[str, dict]:
     """
     Generate tree output for a project directory.
 
     Tries system `tree` command first, falls back to Python implementation.
+    Uses Python fallback when include_patterns is specified for accurate filtering.
 
     Args:
         root_path: Root directory path
         max_depth: Maximum depth to traverse
-        ignore_patterns: Patterns to ignore (uses DEFAULT_IGNORE_PATTERNS if None)
+        ignore_patterns: Additional patterns to ignore (merged with cortexignore)
+        include_patterns: If provided, only paths matching patterns are shown
+        use_cortexignore: If True, load patterns from global + project cortexignore files
 
     Returns:
         Tuple of (tree_text, stats_dict)
     """
     root = Path(root_path)
-    ignore = ignore_patterns or DEFAULT_IGNORE_PATTERNS
 
-    # Try system 'tree' command first
-    try:
-        ignore_pattern = "|".join(ignore)
-        result = subprocess.run(
-            ["tree", "-L", str(max_depth), "-a", "-I", ignore_pattern, "--noreport"],
-            cwd=root_path,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            tree_output = result.stdout.strip()
-        else:
+    # Load ignore patterns (defaults + cortexignore files)
+    ignore = load_ignore_patterns(root_path, use_cortexignore)
+    if ignore_patterns:
+        ignore = ignore | ignore_patterns
+
+    # Use Python fallback when include_patterns is specified for accurate filtering
+    if include_patterns:
+        tree_output = _generate_tree_fallback(root, max_depth, ignore, include_patterns)
+    else:
+        # Try system 'tree' command first
+        try:
+            ignore_pattern = "|".join(ignore)
+            result = subprocess.run(
+                ["tree", "-L", str(max_depth), "-a", "-I", ignore_pattern, "--noreport"],
+                cwd=root_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                tree_output = result.stdout.strip()
+            else:
+                tree_output = _generate_tree_fallback(root, max_depth, ignore)
+        except FileNotFoundError:
+            # 'tree' command not installed
             tree_output = _generate_tree_fallback(root, max_depth, ignore)
-    except FileNotFoundError:
-        # 'tree' command not installed
-        tree_output = _generate_tree_fallback(root, max_depth, ignore)
-    except subprocess.TimeoutExpired:
-        tree_output = _generate_tree_fallback(root, max_depth, ignore)
+        except subprocess.TimeoutExpired:
+            tree_output = _generate_tree_fallback(root, max_depth, ignore)
 
     # Calculate stats
     stats = _analyze_tree(tree_output)
@@ -68,10 +82,35 @@ def _generate_tree_fallback(
     root: Path,
     max_depth: int,
     ignore: set[str],
+    include_patterns: Optional[list[str]] = None,
 ) -> str:
     """Pure-Python tree generation fallback."""
 
-    def traverse(path: Path, prefix: str = "", depth: int = 0) -> list[str]:
+    def matches_include(rel_path: str, is_dir: bool) -> bool:
+        """Check if path matches any include pattern."""
+        if not include_patterns:
+            return True
+        for pattern in include_patterns:
+            # For directories, check if pattern starts with this directory
+            if is_dir:
+                # Directory matches if any pattern starts with it or matches it
+                if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(rel_path + "/", pattern):
+                    return True
+                # Also match if any pattern could be under this directory
+                if pattern.startswith(rel_path + "/") or fnmatch.fnmatch(pattern, rel_path + "/*"):
+                    return True
+                # Check if pattern could match something under this directory
+                pattern_parts = pattern.split("/")
+                rel_parts = rel_path.split("/")
+                if len(pattern_parts) > len(rel_parts):
+                    if all(fnmatch.fnmatch(rp, pp) for rp, pp in zip(rel_parts, pattern_parts[:len(rel_parts)])):
+                        return True
+            else:
+                if fnmatch.fnmatch(rel_path, pattern):
+                    return True
+        return False
+
+    def traverse(path: Path, prefix: str = "", depth: int = 0, rel_prefix: str = "") -> list[str]:
         if depth > max_depth:
             return []
 
@@ -87,6 +126,15 @@ def _generate_tree_fallback(
                 and not i.name.endswith(".egg-info")
             ]
 
+            # Filter by include patterns if specified
+            if include_patterns:
+                filtered_items = []
+                for item in items:
+                    rel_path = f"{rel_prefix}/{item.name}" if rel_prefix else item.name
+                    if matches_include(rel_path, item.is_dir()):
+                        filtered_items.append(item)
+                items = filtered_items
+
             for i, item in enumerate(items):
                 is_last = i == len(items) - 1
                 current_prefix = "└── " if is_last else "├── "
@@ -94,7 +142,8 @@ def _generate_tree_fallback(
 
                 if item.is_dir():
                     next_prefix = prefix + ("    " if is_last else "│   ")
-                    lines.extend(traverse(item, next_prefix, depth + 1))
+                    next_rel = f"{rel_prefix}/{item.name}" if rel_prefix else item.name
+                    lines.extend(traverse(item, next_prefix, depth + 1, next_rel))
         except PermissionError:
             pass
 

@@ -1065,3 +1065,203 @@ class TestStateFormat:
         assert "files_deleted" in stats
         assert "chunks_deleted" in stats
         assert stats["files_deleted"] == 0  # No deletions on first run
+
+
+class TestSelectiveIngestion:
+    """Tests for selective ingestion with include_patterns and cortexignore."""
+
+    def test_include_patterns_single(self, temp_dir: Path):
+        """Test that include_patterns filters to only matching files."""
+        # Create directory structure
+        src_dir = temp_dir / "src"
+        src_dir.mkdir()
+        (src_dir / "main.py").write_text("def main(): pass")
+
+        tests_dir = temp_dir / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_main.py").write_text("def test(): pass")
+
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "readme.md").write_text("# Readme")
+
+        # Only include src/**
+        files = list(walk_codebase(str(temp_dir), include_patterns=["src/**"]))
+        file_names = [f.name for f in files]
+
+        assert "main.py" in file_names
+        assert "test_main.py" not in file_names
+        assert "readme.md" not in file_names
+
+    def test_include_patterns_multiple(self, temp_dir: Path):
+        """Test that multiple include_patterns are ORed together."""
+        # Create directory structure
+        src_dir = temp_dir / "src"
+        src_dir.mkdir()
+        (src_dir / "main.py").write_text("def main(): pass")
+
+        tests_dir = temp_dir / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_main.py").write_text("def test(): pass")
+
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "readme.md").write_text("# Readme")
+
+        # Include src/** OR tests/**
+        files = list(walk_codebase(str(temp_dir), include_patterns=["src/**", "tests/**"]))
+        file_names = [f.name for f in files]
+
+        assert "main.py" in file_names
+        assert "test_main.py" in file_names
+        assert "readme.md" not in file_names
+
+    def test_include_patterns_nested(self, temp_dir: Path):
+        """Test include patterns with deeply nested paths."""
+        # Create nested structure
+        api_dir = temp_dir / "packages" / "api" / "src"
+        api_dir.mkdir(parents=True)
+        (api_dir / "handler.py").write_text("def handle(): pass")
+
+        web_dir = temp_dir / "packages" / "web" / "src"
+        web_dir.mkdir(parents=True)
+        (web_dir / "app.js").write_text("const app = {}")
+
+        files = list(walk_codebase(str(temp_dir), include_patterns=["packages/api/**"]))
+        file_names = [f.name for f in files]
+
+        assert "handler.py" in file_names
+        assert "app.js" not in file_names
+
+    def test_project_cortexignore(self, temp_dir: Path):
+        """Test that project .cortexignore is respected."""
+        # Create files
+        (temp_dir / "main.py").write_text("def main(): pass")
+
+        fixtures_dir = temp_dir / "fixtures"
+        fixtures_dir.mkdir()
+        (fixtures_dir / "data.json").write_text("{}")
+
+        # Create project .cortexignore
+        (temp_dir / ".cortexignore").write_text("fixtures\n")
+
+        files = list(walk_codebase(str(temp_dir), use_cortexignore=True))
+        file_names = [f.name for f in files]
+
+        assert "main.py" in file_names
+        assert "data.json" not in file_names
+
+    def test_project_cortexignore_comments(self, temp_dir: Path):
+        """Test that .cortexignore handles comments correctly."""
+        (temp_dir / "main.py").write_text("def main(): pass")
+        (temp_dir / "generated.py").write_text("# auto-generated")
+
+        # Create .cortexignore with comments
+        (temp_dir / ".cortexignore").write_text("""
+# This is a comment
+generated.py
+# Another comment
+""")
+
+        files = list(walk_codebase(str(temp_dir), use_cortexignore=True))
+        file_names = [f.name for f in files]
+
+        assert "main.py" in file_names
+        assert "generated.py" not in file_names
+
+    def test_disable_cortexignore(self, temp_dir: Path):
+        """Test that use_cortexignore=False skips cortexignore files."""
+        (temp_dir / "main.py").write_text("def main(): pass")
+        (temp_dir / "ignored.py").write_text("# should not be ignored")
+
+        # Create .cortexignore that would ignore ignored.py
+        (temp_dir / ".cortexignore").write_text("ignored.py\n")
+
+        # With cortexignore disabled, ignored.py should be included
+        files = list(walk_codebase(str(temp_dir), use_cortexignore=False))
+        file_names = [f.name for f in files]
+
+        assert "main.py" in file_names
+        assert "ignored.py" in file_names
+
+    def test_include_patterns_with_cortexignore(self, temp_dir: Path):
+        """Test that include_patterns and cortexignore work together."""
+        # Create structure
+        src_dir = temp_dir / "src"
+        src_dir.mkdir()
+        (src_dir / "main.py").write_text("def main(): pass")
+        (src_dir / "generated.py").write_text("# generated")
+
+        tests_dir = temp_dir / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_main.py").write_text("def test(): pass")
+
+        # cortexignore excludes generated files
+        (temp_dir / ".cortexignore").write_text("**/generated.py\n")
+
+        # Include only src/**
+        files = list(walk_codebase(
+            str(temp_dir),
+            include_patterns=["src/**"],
+            use_cortexignore=True,
+        ))
+        file_names = [f.name for f in files]
+
+        # main.py should be included (in src/, not ignored)
+        assert "main.py" in file_names
+        # generated.py should be excluded (by cortexignore)
+        assert "generated.py" not in file_names
+        # test_main.py should be excluded (not in include pattern)
+        assert "test_main.py" not in file_names
+
+    def test_ingest_codebase_with_include_patterns(self, temp_dir: Path, temp_chroma_client):
+        """Test ingest_codebase with include_patterns."""
+        from src.storage import get_or_create_collection
+
+        # Create structure
+        src_dir = temp_dir / "code" / "src"
+        src_dir.mkdir(parents=True)
+        (src_dir / "main.py").write_text("def main(): pass")
+
+        docs_dir = temp_dir / "code" / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "readme.md").write_text("# Readme")
+
+        collection = get_or_create_collection(temp_chroma_client, "test_include")
+        code_dir = temp_dir / "code"
+        state_file = str(temp_dir / "state.json")
+
+        stats = ingest_codebase(
+            root_path=str(code_dir),
+            collection=collection,
+            project_id="test",
+            header_provider="none",
+            state_file=state_file,
+            include_patterns=["src/**"],
+        )
+
+        # Should only process src/main.py, not docs/readme.md
+        assert stats["files_processed"] == 1
+        assert stats["files_scanned"] == 1
+
+    def test_skeleton_respects_include_patterns(self, temp_dir: Path):
+        """Test that skeleton generation respects include_patterns."""
+        # Create structure
+        src_dir = temp_dir / "src"
+        src_dir.mkdir()
+        (src_dir / "main.py").write_text("def main(): pass")
+
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "readme.md").write_text("# Readme")
+
+        tree, stats = generate_tree_structure(
+            str(temp_dir),
+            include_patterns=["src/**"],
+        )
+
+        assert "src" in tree
+        assert "main.py" in tree
+        # docs should not appear since it doesn't match pattern
+        assert "docs" not in tree
+        assert "readme.md" not in tree

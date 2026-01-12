@@ -4,18 +4,21 @@ Codebase Walker
 File system traversal with filtering for code files.
 """
 
+import fnmatch
 import hashlib
 import os
 from pathlib import Path
 from typing import Generator, Optional
 
-from src.config import BINARY_EXTENSIONS, DEFAULT_IGNORE_PATTERNS, MAX_FILE_SIZE
+from src.config import BINARY_EXTENSIONS, MAX_FILE_SIZE, load_ignore_patterns
 
 
 def walk_codebase(
     root_path: str,
     extensions: Optional[set[str]] = None,
     ignore_patterns: Optional[set[str]] = None,
+    include_patterns: Optional[list[str]] = None,
+    use_cortexignore: bool = True,
 ) -> Generator[Path, None, None]:
     """
     Walk codebase yielding files to process.
@@ -23,12 +26,19 @@ def walk_codebase(
     Args:
         root_path: Root directory to walk
         extensions: Optional set of extensions to include (e.g., {'.py', '.js'})
-        ignore_patterns: Patterns to ignore (directories/files)
+        ignore_patterns: Additional patterns to ignore (merged with defaults + cortexignore)
+        include_patterns: If provided, only files matching at least one pattern are yielded.
+                          Patterns are relative to root_path (e.g., ["src/**", "tests/**"])
+        use_cortexignore: If True, load patterns from global + project cortexignore files
 
     Yields:
         Path objects for each file to process
     """
-    ignore = ignore_patterns or DEFAULT_IGNORE_PATTERNS
+    # Load ignore patterns (defaults + cortexignore files)
+    ignore = load_ignore_patterns(root_path, use_cortexignore)
+    if ignore_patterns:
+        ignore = ignore | ignore_patterns
+
     root = Path(root_path)
 
     for dirpath, dirnames, filenames in os.walk(root):
@@ -60,6 +70,16 @@ def walk_codebase(
             # Filter by extension if specified
             if extensions and file_path.suffix.lower() not in extensions:
                 continue
+
+            # Check if file matches any ignore pattern
+            rel_path = str(file_path.relative_to(root))
+            if any(fnmatch.fnmatch(filename, p) or fnmatch.fnmatch(rel_path, p) for p in ignore):
+                continue
+
+            # Filter by include patterns if specified
+            if include_patterns:
+                if not any(fnmatch.fnmatch(rel_path, p) for p in include_patterns):
+                    continue
 
             yield file_path
 

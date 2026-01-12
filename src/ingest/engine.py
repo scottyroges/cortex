@@ -136,6 +136,8 @@ def ingest_codebase(
     force_full: bool = False,
     header_provider: str = "none",
     state_file: Optional[str] = None,
+    include_patterns: Optional[list[str]] = None,
+    use_cortexignore: bool = True,
 ) -> dict[str, Any]:
     """
     Ingest an entire codebase into the collection.
@@ -155,6 +157,9 @@ def ingest_codebase(
         force_full: Force full re-ingestion (ignore delta sync)
         header_provider: One of "anthropic", "claude-cli", or "none"
         state_file: Path to state file for delta sync
+        include_patterns: If provided, only files matching at least one glob pattern are indexed.
+                          Patterns are relative to root_path (e.g., ["src/**", "tests/**"])
+        use_cortexignore: If True, load patterns from global + project cortexignore files
 
     Returns:
         Stats dictionary with ingestion results
@@ -195,7 +200,11 @@ def ingest_codebase(
     if force_full:
         # Full re-ingestion requested
         stats["delta_mode"] = "full"
-        all_files = list(walk_codebase(root_path))
+        all_files = list(walk_codebase(
+            root_path,
+            include_patterns=include_patterns,
+            use_cortexignore=use_cortexignore,
+        ))
         files_to_process = all_files
         stats["files_scanned"] = len(all_files)
         logger.info(f"Full ingestion: {len(all_files)} files")
@@ -212,7 +221,11 @@ def ingest_codebase(
 
         # Combine modified and untracked, filter through walk_codebase patterns
         all_changed = set(modified + untracked)
-        all_valid_files = set(str(f) for f in walk_codebase(root_path))
+        all_valid_files = set(str(f) for f in walk_codebase(
+            root_path,
+            include_patterns=include_patterns,
+            use_cortexignore=use_cortexignore,
+        ))
 
         # Only process files that pass our filters (not binary, not ignored, etc.)
         files_to_process = [
@@ -229,7 +242,11 @@ def ingest_codebase(
     else:
         # Hash-based fallback (first index or non-git repo)
         stats["delta_mode"] = "hash" if not force_full else "full"
-        all_files = list(walk_codebase(root_path))
+        all_files = list(walk_codebase(
+            root_path,
+            include_patterns=include_patterns,
+            use_cortexignore=use_cortexignore,
+        ))
         stats["files_scanned"] = len(all_files)
 
         # Filter to changed files using MD5 hashes
@@ -297,7 +314,11 @@ def ingest_codebase(
 
     # Generate and store skeleton
     try:
-        tree_output, tree_stats = generate_tree_structure(root_path)
+        tree_output, tree_stats = generate_tree_structure(
+            root_path,
+            include_patterns=include_patterns,
+            use_cortexignore=use_cortexignore,
+        )
         store_skeleton(collection, tree_output, project_id, branch, tree_stats)
         stats["skeleton"] = tree_stats
         logger.info(f"Skeleton indexed: {tree_stats['total_files']} files, {tree_stats['total_dirs']} dirs")

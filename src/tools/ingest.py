@@ -19,6 +19,8 @@ def ingest_code_into_cortex(
     path: str,
     project_name: Optional[str] = None,
     force_full: bool = False,
+    include_patterns: Optional[list[str]] = None,
+    use_cortexignore: bool = True,
 ) -> str:
     """
     Ingest a codebase directory into Cortex memory.
@@ -30,11 +32,15 @@ def ingest_code_into_cortex(
         path: Absolute path to the codebase root directory
         project_name: Optional project identifier (defaults to directory name)
         force_full: Force full re-ingestion, ignoring delta sync
+        include_patterns: If provided, only files matching at least one glob pattern are indexed.
+                          Patterns are relative to path (e.g., ["src/**", "tests/**"])
+        use_cortexignore: If True (default), load ignore patterns from global ~/.cortex/cortexignore
+                          and project .cortexignore files
 
     Returns:
         JSON with ingestion statistics
     """
-    logger.info(f"Ingesting codebase: path={path}, project={project_name}, force_full={force_full}")
+    logger.info(f"Ingesting codebase: path={path}, project={project_name}, force_full={force_full}, include_patterns={include_patterns}")
     start_time = time.time()
 
     try:
@@ -48,6 +54,8 @@ def ingest_code_into_cortex(
             anthropic_client=anthropic,
             force_full=force_full,
             header_provider=CONFIG["header_provider"],
+            include_patterns=include_patterns,
+            use_cortexignore=use_cortexignore,
         )
 
         # Rebuild search index after ingestion

@@ -79,6 +79,50 @@ DEFAULT_IGNORE_PATTERNS = {
     "*.egg-info",
 }
 
+
+def _load_ignore_file(path: Path) -> set[str]:
+    """Load patterns from an ignore file (like .gitignore format)."""
+    if not path.exists():
+        return set()
+    patterns = set()
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            patterns.add(line)
+    return patterns
+
+
+def load_ignore_patterns(root_path: str, use_cortexignore: bool = True) -> set[str]:
+    """Load and merge ignore patterns from global + project cortexignore files.
+
+    Merge order (all patterns combined):
+    1. DEFAULT_IGNORE_PATTERNS (hardcoded sensible defaults)
+    2. Global ~/.cortex/cortexignore (user's smart defaults)
+    3. Project <root>/.cortexignore (project-specific)
+
+    Args:
+        root_path: Root path of the project being indexed
+        use_cortexignore: If False, only return DEFAULT_IGNORE_PATTERNS
+
+    Returns:
+        Set of ignore patterns to use for filtering
+    """
+    patterns = set(DEFAULT_IGNORE_PATTERNS)
+
+    if not use_cortexignore:
+        return patterns
+
+    # Global: ~/.cortex/cortexignore
+    global_ignore = get_data_path() / "cortexignore"
+    patterns.update(_load_ignore_file(global_ignore))
+
+    # Project: <root>/.cortexignore
+    project_ignore = Path(root_path) / ".cortexignore"
+    patterns.update(_load_ignore_file(project_ignore))
+
+    return patterns
+
+
 # --- Binary Extensions ---
 
 BINARY_EXTENSIONS = {

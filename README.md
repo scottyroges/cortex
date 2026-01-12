@@ -164,6 +164,50 @@ You can also check from within a Claude Code session using the `get_cortex_versi
 | `get_cortex_version` | Check daemon version and if rebuild is needed |
 | `get_skeleton` | Get file tree structure for a project |
 
+## Selective Ingestion
+
+For large codebases, you can index only specific directories using glob patterns:
+
+```python
+# Index only the API and auth packages
+ingest_code_into_cortex("/path/to/monorepo", include_patterns=["services/api/**", "packages/auth/**"])
+```
+
+### Cortexignore Files
+
+Cortex supports `.gitignore`-style exclusion files at two levels:
+
+| File | Scope | Description |
+|------|-------|-------------|
+| `~/.cortex/cortexignore` | Global | Applies to all projects |
+| `<project>/.cortexignore` | Project | Project-specific exclusions |
+
+Both files are automatically merged with built-in defaults (node_modules, .venv, dist, etc.).
+
+**Example `~/.cortex/cortexignore`:**
+```
+# Generated files (all projects)
+*.pb.go
+*_generated.py
+*.min.js
+
+# Large assets
+*.wasm
+vendor/
+```
+
+**Example `<project>/.cortexignore`:**
+```
+# Project-specific exclusions
+fixtures/
+test_data/large_files/
+```
+
+To skip loading cortexignore files entirely:
+```python
+ingest_code_into_cortex("/path/to/project", use_cortexignore=False)
+```
+
 ## Supported Languages (AST Chunking)
 
 Python, JavaScript, TypeScript, Java, Go, Rust, Ruby, PHP, C/C++, C#, Swift, Kotlin, Scala, Solidity, Lua, Haskell, Elixir, Markdown, HTML
