@@ -460,7 +460,7 @@ with open('$SETTINGS_FILE', 'w') as f:
     echo "     cortex daemon start"
     echo ""
     echo "  2. Add Cortex to Claude Code:"
-    echo "     claude mcp add cortex cortex"
+    echo "     claude mcp add cortex cortex --scope user"
     echo ""
     echo "  3. Restart Claude Code to load the MCP server"
     echo ""
@@ -776,7 +776,7 @@ ENVIRONMENT VARIABLES (override settings.json):
 QUICK START:
     1. Run 'cortex init' to configure your settings
     2. Start the daemon: cortex daemon start
-    3. Add to Claude Code: claude mcp add cortex cortex
+    3. Add to Claude Code: claude mcp add cortex cortex --scope user
     4. Restart Claude Code to load the MCP server
 
 EXAMPLES:

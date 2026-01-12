@@ -55,10 +55,10 @@ This builds the Docker image (first time only) and starts the daemon.
 ### 4. Add to Claude Code
 
 ```bash
-claude mcp add cortex cortex
+claude mcp add cortex cortex --scope user
 ```
 
-Then restart Claude Code. That's it!
+The `--scope user` flag makes Cortex available in all projects. Then restart Claude Code. That's it!
 
 ## Configuration
 
