@@ -15,6 +15,74 @@ from src.tools.services import CONFIG, get_collection, get_reranker, get_repo_pa
 
 logger = get_logger("tools.search")
 
+# Initiative boost factor for focused initiative content
+INITIATIVE_BOOST_FACTOR = 1.3
+
+
+def _resolve_initiative_id(collection, repository: Optional[str], initiative: str) -> Optional[str]:
+    """Resolve initiative name to ID."""
+    if initiative.startswith("initiative:"):
+        return initiative
+
+    try:
+        where_filter = {"$and": [{"type": "initiative"}, {"name": initiative}]}
+        if repository:
+            where_filter["$and"].append({"repository": repository})
+
+        result = collection.get(where=where_filter, include=[])
+        if result["ids"]:
+            return result["ids"][0]
+    except Exception as e:
+        logger.warning(f"Failed to resolve initiative: {e}")
+
+    return None
+
+
+def _get_focused_initiative_id(collection, repository: str) -> Optional[str]:
+    """Get the focused initiative ID for a repository."""
+    try:
+        focus_id = f"{repository}:focus"
+        result = collection.get(ids=[focus_id], include=["metadatas"])
+        if result["ids"]:
+            return result["metadatas"][0].get("initiative_id")
+    except Exception as e:
+        logger.warning(f"Failed to get focused initiative: {e}")
+    return None
+
+
+def _apply_initiative_boost(
+    results: list,
+    focused_initiative_id: str,
+    boost_factor: float = INITIATIVE_BOOST_FACTOR,
+) -> list:
+    """Apply score boost to results from the focused initiative."""
+    for result in results:
+        meta = result.get("meta", {})
+        if meta.get("initiative_id") == focused_initiative_id:
+            current_score = result.get("boosted_score", result.get("rerank_score", 0))
+            result["boosted_score"] = current_score * boost_factor
+            result["initiative_boost"] = boost_factor
+
+    # Re-sort by boosted_score
+    return sorted(results, key=lambda x: x.get("boosted_score", x.get("rerank_score", 0)), reverse=True)
+
+
+def _filter_by_initiative(results: list, initiative_id: str, include_completed: bool = True) -> list:
+    """Filter results to only include those from a specific initiative."""
+    filtered = []
+    for result in results:
+        meta = result.get("meta", {})
+        result_init_id = meta.get("initiative_id")
+
+        # Include if matches initiative
+        if result_init_id == initiative_id:
+            filtered.append(result)
+        # Include code that's not tagged with any initiative (belongs to whole repo)
+        elif meta.get("type") == "code" and not result_init_id:
+            filtered.append(result)
+
+    return filtered
+
 
 def build_branch_aware_filter(
     project: Optional[str] = None,
@@ -60,27 +128,35 @@ def build_branch_aware_filter(
 def search_cortex(
     query: str,
     project: Optional[str] = None,
+    repository: Optional[str] = None,
     min_score: Optional[float] = None,
     branch: Optional[str] = None,
+    initiative: Optional[str] = None,
+    include_completed: bool = True,
 ) -> str:
     """
     Search the Cortex memory for relevant code, documentation, or notes.
 
     Args:
         query: Natural language search query
-        project: Optional project filter
+        project: Optional project filter (deprecated, use repository)
+        repository: Repository identifier for filtering
         min_score: Minimum relevance score threshold (0-1, overrides config)
         branch: Optional branch filter. Defaults to auto-detect from cwd.
                 Code/skeleton are filtered by branch; notes/commits are not.
+        initiative: Optional initiative ID or name to filter results
+        include_completed: Include content from completed initiatives (default: True)
 
     Returns:
         JSON with search results including content, file paths, and scores
     """
+    # Handle project/repository naming transition
+    repo = repository or project
     if not CONFIG["enabled"]:
         logger.info("Search rejected: Cortex is disabled")
         return json.dumps({"error": "Cortex is disabled", "results": []})
 
-    logger.info(f"Search query: '{query}' (project={project}, branch={branch})")
+    logger.info(f"Search query: '{query}' (repository={repo}, branch={branch}, initiative={initiative})")
     start_time = time.time()
 
     try:
@@ -102,10 +178,22 @@ def search_cortex(
 
         # Build smart where filter (code filters by branch, notes don't)
         where_filter = build_branch_aware_filter(
-            project=project,
+            project=repo,
             branches=branches,
         )
         logger.debug(f"Branch filter: effective={effective_branch}, branches={branches}")
+
+        # Resolve initiative filter if provided
+        initiative_id = None
+        if initiative:
+            initiative_id = _resolve_initiative_id(collection, repo, initiative)
+            if initiative_id:
+                logger.debug(f"Initiative filter: {initiative_id}")
+
+        # Get focused initiative for boosting (if no specific initiative filter)
+        focused_initiative_id = None
+        if not initiative_id and repo:
+            focused_initiative_id = _get_focused_initiative_id(collection, repo)
 
         # Hybrid search
         search_start = time.time()
@@ -144,6 +232,16 @@ def search_cortex(
             )
             logger.debug(f"Recency boost applied (half_life={CONFIG['recency_half_life_days']}d)")
 
+        # Apply initiative filtering if requested
+        if initiative_id:
+            reranked = _filter_by_initiative(reranked, initiative_id, include_completed)
+            logger.debug(f"Initiative filter applied: {len(reranked)} results remain")
+
+        # Apply initiative boost for focused initiative (if no explicit filter)
+        if focused_initiative_id and not initiative_id:
+            reranked = _apply_initiative_boost(reranked, focused_initiative_id)
+            logger.debug(f"Initiative boost applied for focused: {focused_initiative_id}")
+
         # Apply minimum score filter (use boosted_score if available)
         threshold = min_score if min_score is not None else CONFIG["min_score"]
         score_key = "boosted_score" if CONFIG["recency_boost"] else "rerank_score"
@@ -163,20 +261,28 @@ def search_cortex(
             result = {
                 "content": r.get("text", "")[:2000],
                 "file_path": meta.get("file_path", "unknown"),
-                "project": meta.get("project", "unknown"),
+                "repository": meta.get("repository", meta.get("project", "unknown")),
+                "project": meta.get("project", "unknown"),  # Keep for backwards compat
                 "branch": meta.get("branch", "unknown"),
                 "language": meta.get("language", "unknown"),
                 "score": float(round(final_score, 4)),
             }
-            if CONFIG["verbose"] and "recency_boost" in r:
-                result["recency_boost"] = r["recency_boost"]
+            # Add initiative info if present
+            if meta.get("initiative_id"):
+                result["initiative_id"] = meta.get("initiative_id")
+                result["initiative_name"] = meta.get("initiative_name", "")
+            if CONFIG["verbose"]:
+                if "recency_boost" in r:
+                    result["recency_boost"] = r["recency_boost"]
+                if "initiative_boost" in r:
+                    result["initiative_boost"] = r["initiative_boost"]
             results.append(result)
 
         # Fetch skeleton if we have results with a project
         skeleton_data = None
-        detected_project = project
+        detected_project = repo
         if not detected_project and results:
-            detected_project = results[0].get("project")
+            detected_project = results[0].get("repository", results[0].get("project"))
 
         if detected_project and detected_project != "unknown":
             try:

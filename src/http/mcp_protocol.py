@@ -55,9 +55,12 @@ MCP_TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Natural language search query"},
-                "project": {"type": "string", "description": "Optional project filter"},
+                "project": {"type": "string", "description": "Optional project filter (deprecated, use repository)"},
+                "repository": {"type": "string", "description": "Repository identifier for filtering"},
                 "min_score": {"type": "number", "description": "Minimum relevance score (0-1)"},
                 "branch": {"type": "string", "description": "Optional branch filter"},
+                "initiative": {"type": "string", "description": "Initiative ID or name to filter results"},
+                "include_completed": {"type": "boolean", "default": True, "description": "Include content from completed initiatives"},
             },
             "required": ["query"],
         },
@@ -93,7 +96,9 @@ MCP_TOOL_SCHEMAS = [
             "properties": {
                 "summary": {"type": "string", "description": "Detailed summary of the session: what changed, why, decisions made, problems solved, and future TODOs"},
                 "changed_files": {"type": "array", "items": {"type": "string"}, "description": "List of modified file paths"},
-                "project": {"type": "string", "description": "Project identifier"},
+                "project": {"type": "string", "description": "Project identifier (deprecated, use repository)"},
+                "repository": {"type": "string", "description": "Repository identifier"},
+                "initiative": {"type": "string", "description": "Initiative ID or name to tag (uses focused initiative if not specified)"},
             },
             "required": ["summary", "changed_files"],
         },
@@ -107,7 +112,9 @@ MCP_TOOL_SCHEMAS = [
                 "content": {"type": "string", "description": "Note content"},
                 "title": {"type": "string", "description": "Optional title"},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags"},
-                "project": {"type": "string", "description": "Associated project"},
+                "project": {"type": "string", "description": "Associated project (deprecated, use repository)"},
+                "repository": {"type": "string", "description": "Repository identifier"},
+                "initiative": {"type": "string", "description": "Initiative ID or name to tag (uses focused initiative if not specified)"},
             },
             "required": ["content"],
         },
@@ -132,7 +139,7 @@ MCP_TOOL_SCHEMAS = [
     },
     {
         "name": "set_initiative",
-        "description": "Set or update the current initiative/workstream for a repository.",
+        "description": "(Legacy) Set or update the current initiative/workstream for a repository. Use create_initiative instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -150,6 +157,93 @@ MCP_TOOL_SCHEMAS = [
                 },
             },
             "required": ["repository", "name"],
+        },
+    },
+    {
+        "name": "create_initiative",
+        "description": "Create a new initiative for a repository. Initiatives track multi-session work like epics, migrations, or features. New commits and notes are automatically tagged with the focused initiative.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier (e.g., 'Cortex', 'my-app')",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Initiative name (e.g., 'Auth Migration', 'Performance Optimization')",
+                },
+                "goal": {
+                    "type": "string",
+                    "description": "Optional goal/description for the initiative",
+                },
+                "auto_focus": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to focus this initiative on creation (default: true)",
+                },
+            },
+            "required": ["repository", "name"],
+        },
+    },
+    {
+        "name": "list_initiatives",
+        "description": "List all initiatives for a repository with optional status filtering.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["all", "active", "completed"],
+                    "default": "all",
+                    "description": "Filter by status: 'all', 'active', or 'completed'",
+                },
+            },
+            "required": ["repository"],
+        },
+    },
+    {
+        "name": "focus_initiative",
+        "description": "Set focus to an initiative. New commits and notes will be tagged with this initiative.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier",
+                },
+                "initiative": {
+                    "type": "string",
+                    "description": "Initiative ID or name to focus",
+                },
+            },
+            "required": ["repository", "initiative"],
+        },
+    },
+    {
+        "name": "complete_initiative",
+        "description": "Mark an initiative as completed with a summary. The initiative and its associated commits/notes remain searchable but with recency decay.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "initiative": {
+                    "type": "string",
+                    "description": "Initiative ID or name to complete",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Completion summary describing what was accomplished",
+                },
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier (optional if using initiative ID)",
+                },
+            },
+            "required": ["initiative", "summary"],
         },
     },
     {
@@ -213,11 +307,15 @@ def _get_tool_map():
     """Lazy import of tool functions to avoid circular imports."""
     from src.tools import (
         commit_to_cortex,
+        complete_initiative,
         configure_cortex,
+        create_initiative,
+        focus_initiative,
         get_context_from_cortex,
         get_cortex_version,
         get_skeleton,
         ingest_code_into_cortex,
+        list_initiatives,
         orient_session,
         save_note_to_cortex,
         search_cortex,
@@ -232,6 +330,10 @@ def _get_tool_map():
         "save_note_to_cortex": save_note_to_cortex,
         "set_repo_context": set_repo_context,
         "set_initiative": set_initiative,
+        "create_initiative": create_initiative,
+        "list_initiatives": list_initiatives,
+        "focus_initiative": focus_initiative,
+        "complete_initiative": complete_initiative,
         "get_context_from_cortex": get_context_from_cortex,
         "configure_cortex": configure_cortex,
         "get_skeleton": get_skeleton,

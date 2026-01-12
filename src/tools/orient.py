@@ -106,8 +106,16 @@ def orient_session(
         # Fetch tech_stack
         tech_stack = _fetch_tech_stack(collection, project_name)
 
-        # Fetch active initiative
-        initiative = _fetch_initiative(collection, project_name)
+        # Fetch focused initiative (new format with stale detection)
+        focused_initiative = _fetch_focused_initiative(collection, project_name)
+
+        # Fetch all active initiatives
+        active_initiatives = _fetch_active_initiatives(collection, project_name)
+
+        # Fallback to legacy initiative if no new-format initiatives
+        legacy_initiative = None
+        if not focused_initiative and not active_initiatives:
+            legacy_initiative = _fetch_initiative(collection, project_name)
 
         # Build response
         response = {
@@ -128,8 +136,16 @@ def orient_session(
         if tech_stack:
             response["tech_stack"] = tech_stack
 
-        if initiative:
-            response["active_initiative"] = initiative
+        # Include initiative data
+        if focused_initiative:
+            response["focused_initiative"] = focused_initiative
+
+        if active_initiatives:
+            response["active_initiatives"] = active_initiatives
+
+        # Legacy fallback
+        if legacy_initiative:
+            response["active_initiative"] = legacy_initiative
 
         logger.info(f"Orient complete: indexed={indexed}, needs_reindex={needs_reindex}")
 
@@ -201,7 +217,7 @@ def _fetch_tech_stack(collection, project_name: str) -> Optional[str]:
 
 
 def _fetch_initiative(collection, project_name: str) -> Optional[dict]:
-    """Fetch active initiative from collection."""
+    """Fetch active initiative from collection (legacy format)."""
     try:
         initiative_id = f"{project_name}:initiative"
         result = collection.get(
@@ -218,3 +234,87 @@ def _fetch_initiative(collection, project_name: str) -> Optional[dict]:
         logger.warning(f"Failed to fetch initiative: {e}")
 
     return None
+
+
+def _fetch_focused_initiative(collection, project_name: str) -> Optional[dict]:
+    """Fetch focused initiative with stale detection."""
+    try:
+        from src.tools.initiatives import check_initiative_staleness, STALE_THRESHOLD_DAYS
+
+        # Get focus document
+        focus_id = f"{project_name}:focus"
+        focus_result = collection.get(
+            ids=[focus_id],
+            include=["metadatas"],
+        )
+
+        if not focus_result["ids"]:
+            return None
+
+        focus_meta = focus_result["metadatas"][0]
+        initiative_id = focus_meta.get("initiative_id", "")
+
+        if not initiative_id:
+            return None
+
+        # Get initiative details
+        init_result = collection.get(
+            ids=[initiative_id],
+            include=["documents", "metadatas"],
+        )
+
+        if not init_result["ids"]:
+            return None
+
+        init_meta = init_result["metadatas"][0]
+        updated_at = init_meta.get("updated_at", "")
+
+        # Check staleness
+        is_stale, days_inactive = check_initiative_staleness(updated_at, STALE_THRESHOLD_DAYS)
+
+        return {
+            "id": initiative_id,
+            "name": init_meta.get("name", ""),
+            "goal": init_meta.get("goal", ""),
+            "status": init_meta.get("status", "active"),
+            "updated_at": updated_at,
+            "days_inactive": days_inactive,
+            "stale": is_stale,
+            "prompt": "still_working_or_complete" if is_stale else None,
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch focused initiative: {e}")
+
+    return None
+
+
+def _fetch_active_initiatives(collection, project_name: str) -> list:
+    """Fetch all active (non-completed) initiatives for a project."""
+    try:
+        result = collection.get(
+            where={
+                "$and": [
+                    {"type": "initiative"},
+                    {"repository": project_name},
+                    {"status": "active"},
+                ]
+            },
+            include=["metadatas"],
+        )
+
+        initiatives = []
+        for i, doc_id in enumerate(result.get("ids", [])):
+            meta = result["metadatas"][i] if result.get("metadatas") else {}
+            initiatives.append({
+                "id": doc_id,
+                "name": meta.get("name", ""),
+                "goal": meta.get("goal", ""),
+            })
+
+        return initiatives
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch active initiatives: {e}")
+
+    return []

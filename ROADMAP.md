@@ -13,11 +13,7 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 ## Phase 1: MVP (Localhost Core) ✅
 
-*Dockerized, high-precision memory running locally.*
-
-**Stack**: Docker, ChromaDB, BM25 + FlashRank reranking, Claude Haiku headers
-
-**Tools**: `search_cortex`, `ingest_code_into_cortex`, `commit_to_cortex`, `save_note_to_cortex`, `configure_cortex`, `toggle_cortex`
+Dockerized, high-precision memory with hybrid search (Vector + BM25 + FlashRank reranking), AST-aware chunking, and core MCP tools.
 
 ---
 
@@ -27,53 +23,22 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 ### Completed ✅
 
-- Context Composition (domain/project context with auto-injection)
-- Skeleton Index (`tree` output for file-path grounding)
-- FastAPI Bridge (HTTP endpoint at `localhost:8080/ingest`)
+- **Context Composition** - Domain/project context with auto-injection via `set_repo_context`
+- **Skeleton Index** - File tree output for path grounding via `get_skeleton`
+- **FastAPI Bridge** - HTTP debug endpoints at `localhost:8080`
+- **CLI & Slash Commands** - Shell aliases and `cortex>>` in-chat macros
+- **Custom CLAUDE.md** - Guide Claude on Cortex usage patterns
+- **Selective Ingestion** - Index specific paths with `include_patterns` and `.cortexignore` support
+- **Initiative Management** - Multi-session tracking with `create_initiative`, `list_initiatives`, `focus_initiative`, `complete_initiative`. Auto-tags commits/notes, stale detection, completion signal prompts, search filtering/boosting.
 
-### CLI & Slash Commands
+### Remaining
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Shell Aliases | `cortex search`, `cortex save` bypass LLM | ✅ |
-| In-Chat Macros | `cortex>> search auth` direct tool call | ✅ |
-
-### Claude Integration
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Custom `CLAUDE.md` | Guide Claude on Cortex usage - when to search, commit, save notes | ✅ |
-
-### Initiative Management
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| `list_initiatives` | List all initiatives (active, completed, paused) with last updated timestamps | ⬜ |
-| `resume_initiative` | Resume a previous initiative by ID/name, restore context | ⬜ |
-| `complete_initiative` | Mark initiative as done, archive with summary | ⬜ |
-| `pause_initiative` | Pause current work, save state for later | ⬜ |
-| Initiative History | Track initiative lifecycle: created → active → paused → completed | ⬜ |
-
-### Ingestion
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Selective Ingestion | Index specific paths/globs instead of entire codebase (e.g., `src/api/**`, `packages/auth`) | ✅ |
-| Include/Exclude Patterns | Support `.cortexignore` or config-based patterns for fine-grained control | ✅ |
-
-### Performance & UX
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Async Long-Running Tasks | Make `commit_to_cortex` and `ingest_code_into_cortex` async - return success immediately, process in background | ⬜ |
-
-### Admin & Maintenance
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Datastore Analysis | `analyze_cortex` tool - show stats by type (code/notes/commits), project, branch, storage size, stale entries | ⬜ |
-| Datastore Cleanup | `cleanup_cortex` tool - remove orphaned chunks, old notes/commits, entries from deleted projects | ⬜ |
-| Selective Purge | Delete by filter (project, branch, type, date range) | ⬜ |
+| Feature | Description |
+|---------|-------------|
+| Async Long-Running Tasks | Make `commit_to_cortex` and `ingest_code_into_cortex` async with background processing |
+| Datastore Analysis | `analyze_cortex` tool - stats by type, project, branch, storage size |
+| Datastore Cleanup | `cleanup_cortex` tool - remove orphaned chunks, stale entries |
+| Selective Purge | Delete by filter (project, branch, type, date range) |
 
 ---
 
@@ -81,21 +46,11 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 *Goal: Capture knowledge from outside the codebase and enable domain-specific retrieval.*
 
-### Universal Web Clipper
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Tampermonkey Script | "Save to Brain" button for browsers | ⬜ |
-| Target Sites | Gemini, ChatGPT, Confluence, docs sites | ⬜ |
-
-### Domain-Specific Memories
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Error DB | Exact-match stack trace lookup | ⬜ |
-| `log_error_to_cortex` | Save error signature + fix | ⬜ |
-| `solve_error_from_cortex` | Query by stack trace | ⬜ |
-| Constraints | Negative rules ("DO NOT USE X") in preamble | ⬜ |
+| Feature | Description |
+|---------|-------------|
+| Universal Web Clipper | Tampermonkey "Save to Brain" for Gemini, ChatGPT, Confluence, docs |
+| Error DB | Exact-match stack trace lookup with `log_error_to_cortex` and `solve_error_from_cortex` |
+| Constraints | Negative rules ("DO NOT USE X") in preamble injection |
 
 ---
 
@@ -103,19 +58,13 @@ A local, privacy-first "Second Brain" for Claude Code. Acts as an **Episodic & L
 
 *Goal: Scale to large teams and codebases.*
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Federated Router | Shard memory by domain (Frontend DB, Backend DB) | ⬜ |
-| Routing Agent | Auto-route queries to correct shard | ⬜ |
-| Nightly Builds | Cron job for `git diff` summaries | ⬜ |
-| Log Eater | Ingest `~/.claude/sessions` JSON logs | ⬜ |
-| Multi-User | Team-shared memory with access control | ⬜ |
-
----
-
-## Technical Debt & Bug Fixes
-
-*No outstanding tech debt items.*
+| Feature | Description |
+|---------|-------------|
+| Federated Router | Shard memory by domain (Frontend DB, Backend DB) |
+| Routing Agent | Auto-route queries to correct shard |
+| Nightly Builds | Cron job for `git diff` summaries |
+| Log Eater | Ingest `~/.claude/sessions` JSON logs |
+| Multi-User | Team-shared memory with access control |
 
 ---
 

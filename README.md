@@ -151,9 +151,22 @@ You can also check from within a Claude Code session using the `get_cortex_versi
 | Tool | Description |
 |------|-------------|
 | `set_repo_context` | Set static tech stack info for a repository (e.g., "Python, FastAPI, PostgreSQL") |
-| `set_initiative` | Set current workstream/epic with name and status |
-| `update_initiative_status` | Quick update for initiative status without changing name |
 | `get_context_from_cortex` | Retrieve tech stack and initiative context |
+
+### Initiative Tools
+
+| Tool | Description |
+|------|-------------|
+| `create_initiative` | Start a new initiative (epic, migration, feature) with optional goal |
+| `list_initiatives` | List all initiatives with optional status filter (active/completed/all) |
+| `focus_initiative` | Switch focus to a different initiative |
+| `complete_initiative` | Mark initiative as done with a summary |
+
+**Initiative Workflow:**
+- New commits and notes are automatically tagged with the focused initiative
+- `orient_session` detects stale initiatives (inactive > 5 days) and prompts for action
+- `commit_to_cortex` detects completion signals ("done", "complete", "shipped") and prompts to close
+- Completed initiatives remain searchable with recency decay
 
 ### Admin Tools
 
@@ -298,8 +311,9 @@ Cortex/
 │   ├── tools/             # MCP tool implementations
 │   │   ├── search.py      # search_cortex
 │   │   ├── ingest.py      # ingest_code_into_cortex
-│   │   ├── context.py     # set_repo_context, set_initiative, etc.
+│   │   ├── context.py     # set_repo_context, get_context
 │   │   ├── notes.py       # save_note, commit_to_cortex
+│   │   ├── initiatives.py # create, list, focus, complete initiatives
 │   │   └── admin.py       # configure, toggle, get_version, get_skeleton
 │   ├── search/            # Hybrid search, BM25, reranker
 │   ├── ingest/            # AST chunking, delta sync, skeleton

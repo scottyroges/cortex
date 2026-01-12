@@ -73,3 +73,28 @@ def get_anthropic() -> Optional[Anthropic]:
     if _anthropic_client is None and os.environ.get("ANTHROPIC_API_KEY"):
         _anthropic_client = Anthropic()
     return _anthropic_client
+
+
+def get_chromadb_client() -> chromadb.PersistentClient:
+    """Get the ChromaDB client (for testing)."""
+    global _chroma_client
+    if _chroma_client is None:
+        _chroma_client = get_chroma_client()
+    return _chroma_client
+
+
+def reset_services() -> None:
+    """Reset all lazy-initialized services. Used for testing."""
+    global _chroma_client, _collection, _hybrid_searcher, _reranker, _anthropic_client
+    _chroma_client = None
+    _collection = None
+    _hybrid_searcher = None
+    _reranker = None
+    _anthropic_client = None
+
+
+def set_collection(collection: chromadb.Collection) -> None:
+    """Set the collection directly. Used for testing."""
+    global _collection, _hybrid_searcher
+    _collection = collection
+    _hybrid_searcher = None  # Reset searcher to use new collection
