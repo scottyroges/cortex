@@ -87,11 +87,11 @@ MCP_TOOL_SCHEMAS = [
     },
     {
         "name": "commit_to_cortex",
-        "description": "Save a session summary and re-index changed files.",
+        "description": "Save a session summary and re-index changed files. IMPORTANT: Write a comprehensive summary that captures the FULL context of this session, including: (1) What was implemented/changed and WHY, (2) Key architectural decisions made, (3) Problems encountered and how they were solved, (4) Non-obvious patterns or gotchas discovered, (5) Future work or TODOs identified. This summary will be retrieved in future sessions to restore context, so include enough detail to resume this work months later.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "summary": {"type": "string", "description": "Summary of changes made"},
+                "summary": {"type": "string", "description": "Detailed summary of the session: what changed, why, decisions made, problems solved, and future TODOs"},
                 "changed_files": {"type": "array", "items": {"type": "string"}, "description": "List of modified file paths"},
                 "project": {"type": "string", "description": "Project identifier"},
             },

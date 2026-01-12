@@ -71,8 +71,25 @@ This document describes the primary workflows for how Claude Code interacts with
 **Context:** Claude finishes a chunk of work and wants to preserve context for next session.
 
 **Flow:**
-1. `commit_to_cortex("Added auth middleware, fixed token refresh bug", ["src/auth.py", "src/middleware.py"])` - Save session summary + re-index changed files
+1. `commit_to_cortex(summary, changed_files)` - Save detailed session summary + re-index changed files
 2. `set_initiative(repo, "Auth system", "Phase 2 complete, ready for testing")` - Update initiative status
+
+**Example Summary** (write detailed summaries that capture full context):
+```
+Implemented JWT auth middleware with refresh token rotation. Key decisions:
+- Used httpOnly cookies for token storage (prevents XSS)
+- Refresh tokens stored in Redis with 7-day TTL
+- Added TokenRefreshMiddleware that auto-refreshes tokens within 1hr of expiry
+
+Problems solved:
+- User model needed refresh_token_hash field - added migration
+- Race condition when multiple tabs refresh simultaneously - added mutex lock
+
+Files: src/auth.py (new middleware), src/models/user.py (added field),
+src/middleware.py (integrated auth check)
+
+TODO: Add token revocation endpoint for logout, rate limit refresh attempts
+```
 
 **Tools Used:** `commit_to_cortex`, `set_initiative`
 
