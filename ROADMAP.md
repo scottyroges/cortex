@@ -58,7 +58,6 @@ Dockerized, high-precision memory with hybrid search (Vector + BM25 + FlashRank 
 | ✅ **Recall Recent Work** | `recall_recent_work` tool - timeline view of recent commits/notes for a repository. Answers "what did I do this week?" without manual search queries. Returns summaries grouped by day with initiative context. |
 | ✅ **Initiative Summarization** | `summarize_initiative` tool - generate narrative summary of an initiative's progress. Gathers all tagged commits/notes and synthesizes a timeline with key decisions, problems solved, and current state. |
 | ✅ **Insight Capture** | `insight_to_cortex` tool - save analysis insights about code architecture, patterns, or behavior. Links insights to specific files so retrieval includes both code AND understanding. Claude uses proactively after major analysis. |
-| **Session Auto-Prompt** | Detect long/complex sessions and prompt to commit before closing. Heuristics: token count, file edits, elapsed time. Reduces reliance on manual `commit_to_cortex`. |
 
 #### Datastore Management
 
@@ -79,6 +78,7 @@ Dockerized, high-precision memory with hybrid search (Vector + BM25 + FlashRank 
 
 | Feature | Description |
 |---------|-------------|
+| **Session Auto-Prompt** | Detect long/complex sessions and prompt to commit before closing. Heuristics: token count, file edits, elapsed time. Reduces reliance on manual `commit_to_cortex`. |
 | **Session Lifecycle Hooks** | Integration with Claude Code hooks system to auto-capture session summaries on exit. Uses LLM to generate summary from session transcript. Zero-friction memory capture. |
 | **Git Commit Watcher** | Background process that watches for git commits and auto-indexes changed files + commit messages. Memory stays fresh without manual `ingest`. |
 
