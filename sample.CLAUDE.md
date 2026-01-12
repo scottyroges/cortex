@@ -2,6 +2,7 @@
 
 | Command | What it does |
 |---------|--------------|
+| `cortex>> orient` | Start session - check index status, get project context |
 | `cortex>> search <query>` | Search memory for code, notes, decisions |
 | `cortex>> save <content>` | Save a note, decision, or learning |
 | `cortex>> ingest <path>` | Index a codebase into memory |
@@ -11,7 +12,7 @@
 
 ## Workflow
 
-- **Start of session**: Search for relevant context from past work
+- **Start of session**: Run `cortex>> orient` to check index freshness and get context
 - **During work**: Search before implementing; save architectural decisions
 - **End of session**: Use `commit_to_cortex` with summary and changed files
 
