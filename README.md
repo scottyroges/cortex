@@ -162,6 +162,13 @@ You can also check from within a Claude Code session using the `get_cortex_versi
 | `focus_initiative` | Switch focus to a different initiative |
 | `complete_initiative` | Mark initiative as done with a summary |
 
+### Recall Tools (Session Memory)
+
+| Tool | Description |
+|------|-------------|
+| `recall_recent_work` | Timeline view of recent commits/notes for a repository. Answers "What did I work on this week?" |
+| `summarize_initiative` | Generate narrative summary of an initiative's progress with timeline and stats |
+
 **Initiative Workflow:**
 - New commits and notes are automatically tagged with the focused initiative
 - `orient_session` detects stale initiatives (inactive > 5 days) and prompts for action

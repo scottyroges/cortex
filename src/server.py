@@ -25,10 +25,12 @@ from src.tools import (
     get_skeleton,
     ingest_code_into_cortex,
     orient_session,
+    recall_recent_work,
     save_note_to_cortex,
     search_cortex,
     set_initiative,
     set_repo_context,
+    summarize_initiative,
 )
 
 # Initialize logging
@@ -58,6 +60,10 @@ mcp.tool()(commit_to_cortex)
 mcp.tool()(set_repo_context)
 mcp.tool()(set_initiative)
 mcp.tool()(get_context_from_cortex)
+
+# Recall (Session Memory)
+mcp.tool()(recall_recent_work)
+mcp.tool()(summarize_initiative)
 
 # Admin
 mcp.tool()(configure_cortex)

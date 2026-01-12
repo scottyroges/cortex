@@ -300,6 +300,53 @@ MCP_TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "name": "recall_recent_work",
+        "description": "Recall recent commits and notes for a repository. Returns a timeline view of recent work, grouped by day, with initiative context. Answers 'What did I work on this week?' without manual search queries.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier",
+                },
+                "days": {
+                    "type": "integer",
+                    "default": 7,
+                    "description": "Number of days to look back (default: 7)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 20,
+                    "description": "Maximum number of items to return (default: 20)",
+                },
+                "include_code": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include code changes in results (default: false, notes/commits only)",
+                },
+            },
+            "required": ["repository"],
+        },
+    },
+    {
+        "name": "summarize_initiative",
+        "description": "Generate a narrative summary of an initiative's progress. Gathers all commits and notes tagged with the initiative and synthesizes a timeline with key decisions, problems solved, and current state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "initiative": {
+                    "type": "string",
+                    "description": "Initiative ID or name",
+                },
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier (optional if using initiative ID)",
+                },
+            },
+            "required": ["initiative"],
+        },
+    },
 ]
 
 
@@ -317,10 +364,12 @@ def _get_tool_map():
         ingest_code_into_cortex,
         list_initiatives,
         orient_session,
+        recall_recent_work,
         save_note_to_cortex,
         search_cortex,
         set_initiative,
         set_repo_context,
+        summarize_initiative,
     )
     return {
         "orient_session": orient_session,
@@ -338,6 +387,8 @@ def _get_tool_map():
         "configure_cortex": configure_cortex,
         "get_skeleton": get_skeleton,
         "get_cortex_version": get_cortex_version,
+        "recall_recent_work": recall_recent_work,
+        "summarize_initiative": summarize_initiative,
     }
 
 

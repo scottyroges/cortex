@@ -281,7 +281,77 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 
 ---
 
-## Scenario 15: Debugging/Admin
+## Scenario 15: Recalling Recent Work
+
+**Context:** User returns to a project and wants to know what they worked on recently.
+
+**Problem:** "What did I do last week?" requires manual search queries.
+
+**Flow:**
+1. `recall_recent_work(repository, days=7)` - Get timeline of recent commits/notes
+
+**Example Response:**
+```json
+{
+  "repository": "MyApp",
+  "period": "Last 7 days",
+  "total_items": 5,
+  "timeline": [
+    {
+      "date": "2026-01-11",
+      "day_name": "Saturday",
+      "items": [
+        {"type": "commit", "content": "Added auth middleware..."},
+        {"type": "note", "title": "OAuth decision", "content": "Using PKCE for mobile..."}
+      ]
+    }
+  ],
+  "initiatives_active": [
+    {"name": "Auth Migration", "activity_count": 3}
+  ]
+}
+```
+
+**Tools Used:** `recall_recent_work`
+
+---
+
+## Scenario 16: Summarizing Initiative Progress
+
+**Context:** User wants to understand the full history of an initiative.
+
+**Problem:** Commits and notes are scattered; no narrative view exists.
+
+**Flow:**
+1. `summarize_initiative(initiative, repository)` - Get narrative summary with timeline
+
+**Example Response:**
+```json
+{
+  "initiative": {
+    "name": "Auth Migration",
+    "goal": "Migrate to JWT auth",
+    "status": "active"
+  },
+  "stats": {
+    "commits": 5,
+    "notes": 3,
+    "files_touched": 12,
+    "duration": "2 weeks"
+  },
+  "timeline": [
+    {"date": "Jan 01", "type": "commit", "summary": "Initial auth scaffolding..."},
+    {"date": "Jan 05", "type": "note", "summary": "Decided on refresh token strategy..."}
+  ],
+  "narrative": "**Auth Migration**: Migrate to JWT auth\n\nActivity: 5 commits and 3 notes recorded.\n\nStatus: Active\n\nLast activity: 2 days ago"
+}
+```
+
+**Tools Used:** `summarize_initiative`
+
+---
+
+## Scenario 17: Debugging/Admin
 
 **Context:** User needs to check Cortex status or adjust behavior.
 
@@ -316,11 +386,13 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 | Stale initiative | `orient_session`, `complete_initiative` |
 | Search within initiative | `search_cortex`, `list_initiatives` |
 | Managing initiatives | `list_initiatives`, `focus_initiative` |
+| Recalling recent work | `recall_recent_work` |
+| Summarizing initiatives | `summarize_initiative` |
 | Admin/debug | `get_cortex_version`, `configure_cortex` |
 
 ---
 
-## Final Tool Set (15 tools)
+## Final Tool Set (17 tools)
 
 | Tool | Purpose |
 |------|---------|
@@ -339,3 +411,5 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 | `list_initiatives` | List initiatives with status filtering |
 | `focus_initiative` | Switch focus to a different initiative |
 | `complete_initiative` | Mark initiative as done with summary |
+| `recall_recent_work` | Timeline view of recent work for a repository |
+| `summarize_initiative` | Narrative summary of initiative progress |

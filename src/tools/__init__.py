@@ -19,6 +19,7 @@ from src.tools.initiatives import (
 )
 from src.tools.notes import commit_to_cortex, save_note_to_cortex
 from src.tools.orient import orient_session
+from src.tools.recall import recall_recent_work, summarize_initiative
 from src.tools.search import search_cortex
 
 __all__ = [
@@ -40,6 +41,9 @@ __all__ = [
     "list_initiatives",
     "focus_initiative",
     "complete_initiative",
+    # Recall (Session Memory)
+    "recall_recent_work",
+    "summarize_initiative",
     # Admin
     "configure_cortex",
     "get_cortex_version",
