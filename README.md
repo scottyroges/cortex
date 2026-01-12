@@ -13,13 +13,12 @@ A local, privacy-first memory system for Claude Code. Provides RAG capabilities 
 
 ## Quick Start
 
-### 1. Install
+### 1. Clone and Symlink
 
 ```bash
-# Clone and build
+# Clone the repository
 git clone https://github.com/scottyroges/Cortex.git
 cd Cortex
-docker build -t cortex .
 
 # Symlink wrapper script (auto-updates with git pull)
 # Option 1: System-wide (requires sudo)
@@ -38,9 +37,22 @@ Run the interactive setup:
 cortex init
 ```
 
-This creates `~/.cortex/settings.json` with your code paths and preferences.
+This will ask you for:
+- **Data directory**: Where to store Cortex data (default: `~/.cortex`)
+- **Code paths**: Directories containing code to index
+- **Header provider**: AI-generated summaries (none/claude-cli/anthropic)
+- **Debug mode**: Enable verbose logging
+- **HTTP port**: Port for debug server and CLI (default: 8080)
 
-### 3. Add to Claude Code
+### 3. Start the Daemon
+
+```bash
+cortex daemon start
+```
+
+This builds the Docker image (first time only) and starts the daemon.
+
+### 4. Add to Claude Code
 
 ```bash
 claude mcp add cortex cortex
@@ -52,21 +64,25 @@ Then restart Claude Code. That's it!
 
 ### Settings File
 
-Cortex configuration lives in `~/.cortex/settings.json`. Create it with `cortex init` or edit manually:
+Cortex configuration lives in `<data_path>/settings.json` (default: `~/.cortex/settings.json`). Create it with `cortex init` or edit manually:
 
 ```json
 {
+  "data_path": "~/.cortex",
   "code_paths": ["~/Projects", "~/Work"],
   "header_provider": "none",
-  "debug": false
+  "debug": false,
+  "http_port": 8080
 }
 ```
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
+| `data_path` | string | `"~/.cortex"` | Where to store Cortex data (database, logs) |
 | `code_paths` | string[] | `[]` | Directories containing code to index |
 | `header_provider` | string | `"none"` | `"none"`, `"claude-cli"`, or `"anthropic"` |
 | `debug` | bool | `false` | Enable debug logging |
+| `http_port` | int | `8080` | HTTP debug server port |
 
 ### Managing Configuration
 
@@ -89,10 +105,12 @@ Environment variables can override settings.json (useful for CI/testing):
 
 | Variable | Description |
 |----------|-------------|
+| `CORTEX_DATA_PATH` | Data directory (default: `~/.cortex`) |
 | `CORTEX_CODE_PATHS` | Comma-separated code directories |
 | `CORTEX_HEADER_PROVIDER` | Header provider |
 | `CORTEX_DEBUG` | Enable debug logging |
-| `CORTEX_DATA_PATH` | Data directory (default: `~/.cortex`) |
+| `CORTEX_HTTP_PORT` | HTTP debug server port (default: `8080`) |
+| `CORTEX_DAEMON_PORT` | Internal daemon port (default: `8000`) |
 | `ANTHROPIC_API_KEY` | Required for `header_provider=anthropic` |
 
 ### Header Providers

@@ -60,17 +60,23 @@ SETTINGS_FILE="$DATA_PATH/settings.json"
 SETTINGS_CODE_PATHS=""
 SETTINGS_HEADER_PROVIDER=""
 SETTINGS_DEBUG=""
+SETTINGS_HTTP_PORT=""
+SETTINGS_DATA_PATH=""
 
 # Track env var overrides (for display purposes)
 ENV_OVERRIDE_CODE_PATHS=""
 ENV_OVERRIDE_HEADER_PROVIDER=""
 ENV_OVERRIDE_DEBUG=""
+ENV_OVERRIDE_HTTP_PORT=""
+ENV_OVERRIDE_DATA_PATH=""
 
 load_settings() {
     # Capture original env vars before loading settings
     local orig_code_paths="$CODE_PATHS"
     local orig_header_provider="$CORTEX_HEADER_PROVIDER"
     local orig_debug="$CORTEX_DEBUG"
+    local orig_http_port="$CORTEX_HTTP_PORT"
+    local orig_data_path="$CORTEX_DATA_PATH"
 
     # Load settings from ~/.cortex/settings.json if it exists
     if [ -f "$SETTINGS_FILE" ]; then
@@ -88,6 +94,8 @@ try:
         print('CODE_PATHS=' + ','.join(paths))
     print('HEADER_PROVIDER=' + str(s.get('header_provider', '')))
     print('DEBUG=' + str(s.get('debug', '')).lower())
+    print('HTTP_PORT=' + str(s.get('http_port', '')))
+    print('DATA_PATH=' + str(s.get('data_path', '')))
 except Exception as e:
     print('ERROR=' + str(e), file=sys.stderr)
     sys.exit(1)
@@ -100,6 +108,8 @@ except Exception as e:
                     CODE_PATHS) SETTINGS_CODE_PATHS="$value" ;;
                     HEADER_PROVIDER) SETTINGS_HEADER_PROVIDER="$value" ;;
                     DEBUG) SETTINGS_DEBUG="$value" ;;
+                    HTTP_PORT) SETTINGS_HTTP_PORT="$value" ;;
+                    DATA_PATH) SETTINGS_DATA_PATH="$value" ;;
                 esac
             done <<< "$settings"
         fi
@@ -122,6 +132,21 @@ except Exception as e:
         CORTEX_DEBUG="$SETTINGS_DEBUG"
     elif [ -n "$orig_debug" ] && [ -n "$SETTINGS_DEBUG" ]; then
         ENV_OVERRIDE_DEBUG="true"
+    fi
+
+    # Apply http_port setting
+    if [ -z "$CORTEX_HTTP_PORT" ] && [ -n "$SETTINGS_HTTP_PORT" ]; then
+        HTTP_PORT="$SETTINGS_HTTP_PORT"
+    elif [ -n "$orig_http_port" ] && [ -n "$SETTINGS_HTTP_PORT" ]; then
+        ENV_OVERRIDE_HTTP_PORT="true"
+    fi
+
+    # Apply data_path setting (note: this won't affect current session since settings already loaded)
+    if [ -z "$CORTEX_DATA_PATH" ] && [ -n "$SETTINGS_DATA_PATH" ]; then
+        SETTINGS_DATA_PATH="${SETTINGS_DATA_PATH/#\~/$HOME}"
+        # Note: DATA_PATH is already set, this is just for display
+    elif [ -n "$orig_data_path" ] && [ -n "$SETTINGS_DATA_PATH" ]; then
+        ENV_OVERRIDE_DATA_PATH="true"
     fi
 }
 
@@ -300,7 +325,22 @@ init_settings() {
     echo "Cortex Setup"
     echo "============"
     echo ""
-    echo "This will create ~/.cortex/settings.json"
+
+    # Ask for data directory first (since settings.json lives there)
+    echo "Where should Cortex store its data (database, settings, logs)?"
+    echo "Default: ~/.cortex"
+    echo ""
+    read -r -p "Data directory [~/.cortex]: " data_path_input
+    local data_path="${data_path_input:-~/.cortex}"
+    # Expand ~ for mkdir but keep original for JSON
+    local data_path_expanded="${data_path/#\~/$HOME}"
+
+    # Update DATA_PATH for this session
+    DATA_PATH="$data_path_expanded"
+    SETTINGS_FILE="$DATA_PATH/settings.json"
+
+    echo ""
+    echo "This will create $data_path/settings.json"
     echo ""
 
     # Ensure data directory exists
@@ -368,6 +408,18 @@ init_settings() {
         debug="true"
     fi
 
+    # HTTP port
+    echo ""
+    echo "HTTP debug server port (for CLI search and web clipper):"
+    read -r -p "HTTP port [8080]: " http_port_input
+    local http_port="${http_port_input:-8080}"
+
+    # Validate port is a number
+    if ! [[ "$http_port" =~ ^[0-9]+$ ]]; then
+        echo "Invalid port, using 8080"
+        http_port="8080"
+    fi
+
     # Build JSON
     local paths_json="[]"
     if [ ${#paths[@]} -gt 0 ]; then
@@ -382,9 +434,11 @@ print(json.dumps(paths))
     python3 -c "
 import json
 settings = {
+    'data_path': '$data_path',
     'code_paths': $paths_json,
     'header_provider': '$header_provider',
-    'debug': $debug
+    'debug': $debug,
+    'http_port': $http_port
 }
 with open('$SETTINGS_FILE', 'w') as f:
     json.dump(settings, f, indent=2)
@@ -406,10 +460,13 @@ with open('$SETTINGS_FILE', 'w') as f:
 
     echo ""
     echo "Next steps:"
-    echo "  1. Add Cortex to Claude Code:"
+    echo "  1. Start the Cortex daemon:"
+    echo "     cortex daemon start"
+    echo ""
+    echo "  2. Add Cortex to Claude Code:"
     echo "     claude mcp add cortex cortex"
     echo ""
-    echo "  2. Restart Claude Code to load the MCP server"
+    echo "  3. Restart Claude Code to load the MCP server"
     echo ""
 }
 
@@ -431,13 +488,17 @@ show_config() {
 
     echo ""
     echo "Active configuration (after env var overrides):"
+    echo "  data_path: $DATA_PATH"
     echo "  code_paths: ${CODE_PATHS:-<not set>}"
     echo "  header_provider: ${CORTEX_HEADER_PROVIDER:-<not set>}"
     echo "  debug: ${CORTEX_DEBUG:-<not set>}"
-    echo "  data_path: $DATA_PATH"
+    echo "  http_port: $HTTP_PORT"
     echo ""
 
     # Show any env var overrides
+    if [ -n "$ENV_OVERRIDE_DATA_PATH" ]; then
+        echo "Note: CORTEX_DATA_PATH env var is overriding settings.json"
+    fi
     if [ -n "$ENV_OVERRIDE_CODE_PATHS" ]; then
         echo "Note: CORTEX_CODE_PATHS env var is overriding settings.json"
     fi
@@ -447,6 +508,9 @@ show_config() {
     if [ -n "$ENV_OVERRIDE_DEBUG" ]; then
         echo "Note: CORTEX_DEBUG env var is overriding settings.json"
     fi
+    if [ -n "$ENV_OVERRIDE_HTTP_PORT" ]; then
+        echo "Note: CORTEX_HTTP_PORT env var is overriding settings.json"
+    fi
 }
 
 edit_config() {
@@ -454,9 +518,11 @@ edit_config() {
         echo "No settings file found. Creating default..."
         mkdir -p "$DATA_PATH"
         echo '{
+  "data_path": "~/.cortex",
   "code_paths": [],
   "header_provider": "none",
-  "debug": false
+  "debug": false,
+  "http_port": 8080
 }' > "$SETTINGS_FILE"
     fi
 
@@ -693,26 +759,30 @@ COMMANDS:
     help, --help, -h    Show this help message
 
 CONFIGURATION:
-    Settings are stored in ~/.cortex/settings.json
+    Settings are stored in <data_path>/settings.json (default: ~/.cortex/settings.json)
     Run 'cortex init' to create this file interactively.
 
     Settings file options:
+      data_path         Where to store Cortex data (default: "~/.cortex")
       code_paths        Array of directories to mount (e.g., ["~/Projects"])
       header_provider   "none", "claude-cli", or "anthropic"
       debug             true or false
+      http_port         HTTP debug server port (default: 8080)
 
 ENVIRONMENT VARIABLES (override settings.json):
-    CORTEX_CODE_PATHS       Comma-separated list of code directories
     CORTEX_DATA_PATH        Where to store Cortex data (default: ~/.cortex)
+    CORTEX_CODE_PATHS       Comma-separated list of code directories
     CORTEX_HEADER_PROVIDER  Header provider: "anthropic", "claude-cli", or "none"
     CORTEX_DEBUG            Enable debug logging (true/false)
     CORTEX_DAEMON_PORT      Daemon port (default: 8000)
+    CORTEX_HTTP_PORT        HTTP debug server port (default: 8080)
     ANTHROPIC_API_KEY       Required for header_provider="anthropic"
 
 QUICK START:
-    1. Run 'cortex init' to configure your code paths
-    2. Add to Claude Code: claude mcp add cortex cortex
-    3. Restart Claude Code to load the MCP server
+    1. Run 'cortex init' to configure your settings
+    2. Start the daemon: cortex daemon start
+    3. Add to Claude Code: claude mcp add cortex cortex
+    4. Restart Claude Code to load the MCP server
 
 EXAMPLES:
     cortex init                 # First-time setup
