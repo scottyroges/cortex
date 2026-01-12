@@ -9,12 +9,13 @@
 | `cortex>> ingest <path> --include "src/**"` | Selective ingestion (only matching paths) |
 | `cortex>> skeleton` | Show project file structure |
 | `cortex>> status` | Check if Cortex daemon is running |
+| `cortex>> commit` | Check if Cortex daemon is running |
 
 ## Workflow
 
 - **Start of session**: Run `cortex>> orient` to check index freshness and get context
 - **During work**: Search before implementing; save architectural decisions
-- **End of session**: Use `commit_to_cortex` with summary and changed files
+- **End of session**: Use `cortex>> commit` with summary and changed files
 
 ## What to Save
 
