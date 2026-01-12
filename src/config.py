@@ -20,6 +20,27 @@ def get_data_path() -> Path:
     return DEFAULT_DATA_PATH
 
 
+def ensure_data_dir() -> Path:
+    """Ensure ~/.cortex directory exists with default files.
+
+    Creates:
+    - ~/.cortex/ directory
+    - ~/.cortex/cortexignore with sensible defaults (if not exists)
+
+    Returns:
+        Path to data directory
+    """
+    data_path = get_data_path()
+    data_path.mkdir(parents=True, exist_ok=True)
+
+    # Create global cortexignore with defaults if it doesn't exist
+    cortexignore_path = data_path / "cortexignore"
+    if not cortexignore_path.exists():
+        cortexignore_path.write_text(GLOBAL_CORTEXIGNORE_TEMPLATE)
+
+    return data_path
+
+
 def get_default_db_path() -> str:
     """Get the default database path, expanding ~ to home directory."""
     env_path = os.environ.get("CORTEX_DB_PATH")
@@ -79,6 +100,51 @@ DEFAULT_IGNORE_PATTERNS = {
     "*.egg-info",
 }
 
+# Template for global ~/.cortex/cortexignore (created on first use)
+GLOBAL_CORTEXIGNORE_TEMPLATE = """\
+# Cortex global ignore patterns
+# These apply to all projects. Edit as needed.
+
+# Large data files
+*.csv
+*.parquet
+*.pkl
+*.h5
+*.hdf5
+
+# ML/AI artifacts
+*.pt
+*.pth
+*.onnx
+*.safetensors
+checkpoints/
+wandb/
+mlruns/
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Cargo.lock
+Gemfile.lock
+"""
+
 
 def _load_ignore_file(path: Path) -> set[str]:
     """Load patterns from an ignore file (like .gitignore format)."""
@@ -112,8 +178,8 @@ def load_ignore_patterns(root_path: str, use_cortexignore: bool = True) -> set[s
     if not use_cortexignore:
         return patterns
 
-    # Global: ~/.cortex/cortexignore
-    global_ignore = get_data_path() / "cortexignore"
+    # Global: ~/.cortex/cortexignore (created with defaults if not exists)
+    global_ignore = ensure_data_dir() / "cortexignore"
     patterns.update(_load_ignore_file(global_ignore))
 
     # Project: <root>/.cortexignore
