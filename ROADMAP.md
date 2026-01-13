@@ -163,6 +163,34 @@ Cortex fills this gap by storing:
 
 ---
 
+## To Explore: Memory Browser UI
+
+*Should Cortex have a visual interface for browsing stored memory?*
+
+**The idea:** Memory as living documentation - browse insights, notes, initiatives visually instead of only through search.
+
+**Why it might be valuable:**
+- **Discoverability** - "What do I actually have stored?" is hard to answer without a UI
+- **Trust** - See what Cortex knows before relying on it
+- **Maintenance** - Find stale insights, orphaned data, cleanup candidates
+- **Onboarding** - Browse memory to understand a codebase you're new to
+
+**Feasibility:** High - existing HTTP endpoints (`/debug/*`, `/search`, `/mcp/tools/call`) already expose all data. Primarily a frontend exercise.
+
+**Options to consider:**
+| Approach | Effort | Notes |
+|----------|--------|-------|
+| Static HTML dashboard | Low | Stats, doc list, basic search |
+| Full SPA (React/Vue) | Medium | Rich filtering, timeline views, initiative boards |
+| TUI (`cortex browse`) | Low | Terminal-based browser, no web server needed |
+
+**Open questions:**
+- Who's the audience? Personal tool vs. feature for all users?
+- Read-only browsing, or also editing/managing memory?
+- Worth the maintenance burden of a frontend?
+
+---
+
 ## Architecture
 
 ```
