@@ -398,6 +398,55 @@ insight_to_cortex(
 
 ---
 
+## Scenario 19: Stale Insight Detection and Validation
+
+**Context:** Claude retrieves an insight that was created months ago, but the underlying code may have changed.
+
+**Problem:** Old insights might be outdated - Claude needs to "remember but verify."
+
+**Flow (automatic detection):**
+1. `search_cortex("auth pattern")` - Search includes staleness check
+2. Response includes verification warning:
+   ```json
+   {
+     "results": [{
+       "content": "Auth uses two-phase token refresh...",
+       "staleness": {
+         "level": "likely_stale",
+         "verification_required": true,
+         "files_changed": ["src/auth/middleware.py"]
+       },
+       "verification_warning": "VERIFICATION REQUIRED - FILES CHANGED: This insight references files that have been modified..."
+     }],
+     "staleness_summary": {
+       "verification_required_count": 1
+     }
+   }
+   ```
+3. Claude re-reads the linked files to verify the insight
+
+**Flow (validation - insight still valid):**
+1. After re-reading files, Claude confirms insight is accurate
+2. `validate_insight(insight_id, "still_valid")` - Updates verified_at timestamp and refreshes file hashes
+
+**Flow (validation - insight outdated):**
+1. Claude finds the insight is no longer accurate
+2. `validate_insight(insight_id, "no_longer_valid", deprecate=True, replacement_insight="New understanding: auth now uses...")`
+3. Old insight marked deprecated, new one created with link
+
+**Staleness Levels:**
+| Level | Trigger | Action |
+|-------|---------|--------|
+| `fresh` | No changes | Trust as-is |
+| `possibly_stale` | >30 days old | Advisory warning |
+| `likely_stale` | Linked files modified | Verification required |
+| `files_deleted` | Linked files missing | Verification required |
+| `deprecated` | Explicitly marked invalid | Show replacement link |
+
+**Tools Used:** `search_cortex`, `validate_insight`, `insight_to_cortex`
+
+---
+
 ## Tool Summary by Scenario
 
 | Scenario | Primary Tools |
@@ -419,16 +468,17 @@ insight_to_cortex(
 | Recalling recent work | `recall_recent_work` |
 | Summarizing initiatives | `summarize_initiative` |
 | Capturing insights | `insight_to_cortex` |
+| Validating stale insights | `search_cortex`, `validate_insight` |
 | Admin/debug | `get_cortex_version`, `configure_cortex` |
 
 ---
 
-## Final Tool Set (18 tools)
+## Final Tool Set (19 tools)
 
 | Tool | Purpose |
 |------|---------|
 | `orient_session` | Session entry point with staleness and initiative detection |
-| `search_cortex` | Semantic search with initiative filtering and boosting |
+| `search_cortex` | Semantic search with initiative filtering, boosting, and staleness detection |
 | `ingest_code_into_cortex` | Index codebase with AST chunking |
 | `save_note_to_cortex` | Save notes, decisions, research (auto-tagged with initiative) |
 | `commit_to_cortex` | Save session summary + re-index files (auto-tagged, completion detection) |
@@ -445,3 +495,4 @@ insight_to_cortex(
 | `recall_recent_work` | Timeline view of recent work for a repository |
 | `summarize_initiative` | Narrative summary of initiative progress |
 | `insight_to_cortex` | Save code analysis insights linked to files (auto-used after analysis) |
+| `validate_insight` | Verify stale insights against current code, deprecate if invalid |

@@ -12,6 +12,7 @@ from logging_config import get_logger
 from src.git import get_current_branch
 from src.search import apply_recency_boost
 from src.tools.services import CONFIG, get_collection, get_reranker, get_repo_path, get_searcher
+from src.tools.staleness import check_insight_staleness, check_note_staleness, format_verification_warning
 
 logger = get_logger("tools.search")
 
@@ -252,8 +253,13 @@ def search_cortex(
 
         # Format response
         results = []
-        for r in filtered:
+        staleness_check_enabled = CONFIG.get("staleness_check_enabled", True)
+        staleness_check_limit = CONFIG.get("staleness_check_limit", 10)
+        verification_required_count = 0
+
+        for idx, r in enumerate(filtered):
             meta = r.get("meta", {})
+            doc_type = meta.get("type", "")
             final_score = r.get("boosted_score", r.get("rerank_score", 0))
             result = {
                 "content": r.get("text", "")[:2000],
@@ -263,6 +269,28 @@ def search_cortex(
                 "language": meta.get("language", "unknown"),
                 "score": float(round(final_score, 4)),
             }
+
+            # Add staleness info for insights and notes (limit checks for performance)
+            if staleness_check_enabled and idx < staleness_check_limit:
+                if doc_type == "insight":
+                    staleness = check_insight_staleness(meta, repo_path)
+                    if staleness.get("verification_required") or staleness.get("level") != "fresh":
+                        result["staleness"] = staleness
+                        warning = format_verification_warning(staleness, meta)
+                        if warning:
+                            result["verification_warning"] = warning
+                        if staleness.get("verification_required"):
+                            verification_required_count += 1
+                elif doc_type in ("note", "commit"):
+                    staleness = check_note_staleness(meta)
+                    if staleness.get("verification_required") or staleness.get("level") != "fresh":
+                        result["staleness"] = staleness
+                        warning = format_verification_warning(staleness, meta)
+                        if warning:
+                            result["verification_warning"] = warning
+                        if staleness.get("verification_required"):
+                            verification_required_count += 1
+
             # Add initiative info if present
             if meta.get("initiative_id"):
                 result["initiative_id"] = meta.get("initiative_id")
@@ -350,6 +378,13 @@ def search_cortex(
             "total_candidates": len(candidates),
             "returned": len(results),
         }
+
+        # Add staleness summary if any results require verification
+        if verification_required_count > 0:
+            response["staleness_summary"] = {
+                "verification_required_count": verification_required_count,
+                "message": f"{verification_required_count} result(s) may be stale and require verification before trusting.",
+            }
 
         if skeleton_data:
             response["repository_skeleton"] = skeleton_data

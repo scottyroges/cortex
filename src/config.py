@@ -266,4 +266,9 @@ DEFAULT_CONFIG = {
     "header_provider": get_default_header_provider(),
     "recency_boost": True,
     "recency_half_life_days": 30.0,
+    # Staleness detection
+    "staleness_check_enabled": True,
+    "staleness_check_limit": 10,  # Only check top N results for staleness
+    "staleness_time_threshold_days": 30,
+    "staleness_very_stale_threshold_days": 90,
 }

@@ -25,6 +25,14 @@
 - `orient_session` will warn if an initiative is stale (inactive > 5 days)
 - `commit_to_cortex` detects completion signals ("done", "complete", "shipped") and prompts to close
 
+## Insight Validation (Remember but Verify)
+
+When search returns old insights, check for `verification_warning` in results. If linked files have changed:
+
+1. **Re-read the linked files** to verify the insight is still accurate
+2. **If still valid**: `validate_insight(insight_id, "still_valid")` - refreshes file hashes
+3. **If outdated**: `validate_insight(insight_id, "no_longer_valid", deprecate=True, replacement_insight="...")` - deprecates and creates new
+
 ## Workflow
 
 - **Start of session**: Run `cortex>> orient` to check index freshness and get context

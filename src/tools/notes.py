@@ -9,9 +9,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from pathlib import Path
+
 from logging_config import get_logger
-from src.git import get_current_branch
+from src.git import get_current_branch, get_head_commit
 from src.ingest import ingest_files
+from src.ingest.walker import compute_file_hash
 from src.security import scrub_secrets
 from src.tools.services import CONFIG, get_anthropic, get_collection, get_repo_path, get_searcher
 
@@ -91,6 +94,9 @@ def save_note_to_cortex(
             doc_text = f"{title}\n\n"
         doc_text += scrub_secrets(content)
 
+        # Get current commit for staleness tracking
+        current_commit = get_head_commit(repo_path) if repo_path else None
+
         metadata = {
             "type": "note",
             "title": title or "",
@@ -98,7 +104,14 @@ def save_note_to_cortex(
             "repository": repo,
             "branch": branch,
             "created_at": timestamp,
+            # Staleness tracking
+            "verified_at": timestamp,
+            "status": "active",
         }
+
+        # Add commit SHA if available (for staleness detection)
+        if current_commit:
+            metadata["created_commit"] = current_commit
 
         # Add initiative tagging if available
         if initiative_id:
@@ -197,6 +210,9 @@ def commit_to_cortex(
             # Use focused initiative
             initiative_id, initiative_name = _get_focused_initiative_info(repo)
 
+        # Get current commit for staleness tracking
+        current_commit = get_head_commit(repo_path) if repo_path else None
+
         # Build metadata
         metadata = {
             "type": "commit",
@@ -204,7 +220,13 @@ def commit_to_cortex(
             "branch": branch,
             "files": json.dumps(changed_files),
             "created_at": timestamp,
+            # Staleness tracking
+            "status": "active",
         }
+
+        # Add commit SHA if available (for staleness detection)
+        if current_commit:
+            metadata["created_commit"] = current_commit
 
         # Add initiative tagging if available
         if initiative_id:
@@ -367,6 +389,22 @@ def insight_to_cortex(
         doc_text += scrub_secrets(insight)
         doc_text += f"\n\nLinked files: {', '.join(files)}"
 
+        # Get current commit for staleness tracking
+        current_commit = get_head_commit(repo_path) if repo_path else None
+
+        # Compute file hashes for linked files (for staleness detection)
+        file_hashes = {}
+        if repo_path:
+            for file_path in files:
+                full_path = Path(file_path)
+                if not full_path.is_absolute():
+                    full_path = Path(repo_path) / file_path
+                if full_path.exists():
+                    try:
+                        file_hashes[file_path] = compute_file_hash(full_path)
+                    except (OSError, IOError) as e:
+                        logger.warning(f"Could not hash file {file_path}: {e}")
+
         metadata = {
             "type": "insight",
             "title": title or "",
@@ -375,7 +413,15 @@ def insight_to_cortex(
             "repository": repo,
             "branch": branch,
             "created_at": timestamp,
+            # Staleness tracking
+            "verified_at": timestamp,
+            "status": "active",
+            "file_hashes": json.dumps(file_hashes),
         }
+
+        # Add commit SHA if available (for staleness detection)
+        if current_commit:
+            metadata["created_commit"] = current_commit
 
         # Add initiative tagging if available
         if initiative_id:
@@ -416,6 +462,151 @@ def insight_to_cortex(
 
     except Exception as e:
         logger.error(f"Insight save error: {e}")
+        return json.dumps({
+            "status": "error",
+            "error": str(e),
+        })
+
+
+def validate_insight(
+    insight_id: str,
+    validation_result: str,
+    notes: Optional[str] = None,
+    deprecate: bool = False,
+    replacement_insight: Optional[str] = None,
+    repository: Optional[str] = None,
+) -> str:
+    """
+    Validate a stored insight and optionally update its status.
+
+    Call this after re-reading linked files to verify whether a stale
+    insight is still accurate.
+
+    Args:
+        insight_id: The insight ID to validate (e.g., "insight:abc123")
+        validation_result: Assessment result - one of:
+            - "still_valid": Insight is still accurate
+            - "partially_valid": Some parts are still accurate
+            - "no_longer_valid": Insight is outdated/wrong
+        notes: Optional notes about the validation
+        deprecate: If True and result is "no_longer_valid", mark as deprecated
+        replacement_insight: If deprecating, new insight content to save as replacement
+        repository: Repository identifier (optional)
+
+    Returns:
+        JSON with validation status and any actions taken
+    """
+    repo = repository or "global"
+
+    logger.info(f"Validating insight: {insight_id}, result={validation_result}")
+
+    try:
+        collection = get_collection()
+        repo_path = get_repo_path()
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Fetch the insight
+        result = collection.get(
+            ids=[insight_id],
+            include=["documents", "metadatas"],
+        )
+
+        if not result["ids"]:
+            return json.dumps({
+                "status": "error",
+                "error": f"Insight not found: {insight_id}",
+            })
+
+        meta = result["metadatas"][0]
+        doc = result["documents"][0]
+
+        # Verify it's actually an insight
+        if meta.get("type") != "insight":
+            return json.dumps({
+                "status": "error",
+                "error": f"Document {insight_id} is not an insight (type={meta.get('type')})",
+            })
+
+        # Update verification timestamp
+        meta["verified_at"] = timestamp
+        meta["last_validation_result"] = validation_result
+        if notes:
+            meta["validation_notes"] = notes
+
+        response = {
+            "status": "validated",
+            "insight_id": insight_id,
+            "validation_result": validation_result,
+            "verified_at": timestamp,
+        }
+
+        # Handle deprecation
+        if validation_result == "no_longer_valid" and deprecate:
+            meta["status"] = "deprecated"
+            meta["deprecated_at"] = timestamp
+            meta["deprecation_reason"] = notes or "Marked invalid during validation"
+            response["deprecated"] = True
+            logger.info(f"Deprecated insight: {insight_id}")
+
+            # Create replacement if provided
+            if replacement_insight:
+                linked_files = json.loads(meta.get("files", "[]"))
+                tags = json.loads(meta.get("tags", "[]"))
+
+                new_result_json = insight_to_cortex(
+                    insight=replacement_insight,
+                    files=linked_files,
+                    title=meta.get("title", "") + " (Updated)" if meta.get("title") else None,
+                    tags=tags,
+                    repository=meta.get("repository", repo),
+                )
+                new_result = json.loads(new_result_json)
+
+                if new_result.get("status") == "saved":
+                    meta["superseded_by"] = new_result["insight_id"]
+                    response["replacement_id"] = new_result["insight_id"]
+                    logger.info(f"Created replacement insight: {new_result['insight_id']}")
+
+        elif validation_result == "still_valid":
+            # Refresh file hashes to current state
+            linked_files = json.loads(meta.get("files", "[]"))
+
+            if linked_files and repo_path:
+                new_hashes = {}
+                for file_path in linked_files:
+                    full_path = Path(file_path)
+                    if not full_path.is_absolute():
+                        full_path = Path(repo_path) / file_path
+                    if full_path.exists():
+                        try:
+                            new_hashes[file_path] = compute_file_hash(full_path)
+                        except (OSError, IOError) as e:
+                            logger.warning(f"Could not hash file {file_path}: {e}")
+
+                meta["file_hashes"] = json.dumps(new_hashes)
+                response["file_hashes_refreshed"] = True
+
+            # Update commit reference
+            current_commit = get_head_commit(repo_path) if repo_path else None
+            if current_commit:
+                meta["created_commit"] = current_commit
+
+            logger.info(f"Validated insight as still valid: {insight_id}")
+
+        # Save updated metadata
+        collection.upsert(
+            ids=[insight_id],
+            documents=[doc],
+            metadatas=[meta],
+        )
+
+        # Rebuild search index
+        get_searcher().build_index()
+
+        return json.dumps(response, indent=2)
+
+    except Exception as e:
+        logger.error(f"Validate insight error: {e}")
         return json.dumps({
             "status": "error",
             "error": str(e),

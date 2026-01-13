@@ -186,12 +186,19 @@ You can also check from within a Claude Code session using the `get_cortex_versi
 | `recall_recent_work` | Timeline view of recent commits/notes for a repository. Answers "What did I work on this week?" |
 | `summarize_initiative` | Generate narrative summary of an initiative's progress with timeline and stats |
 | `insight_to_cortex` | Save code analysis insights linked to specific files. Used proactively after major analysis. |
+| `validate_insight` | Verify a stale insight against current code. Deprecate if invalid, optionally create replacement. |
 
 **Initiative Workflow:**
 - New commits and notes are automatically tagged with the focused initiative
 - `orient_session` detects stale initiatives (inactive > 5 days) and prompts for action
 - `commit_to_cortex` detects completion signals ("done", "complete", "shipped") and prompts to close
 - Completed initiatives remain searchable with recency decay
+
+**Insight Staleness Detection (Remember but Verify):**
+- When insights are created, file hashes are stored for linked files
+- Search results include staleness warnings when linked files have changed
+- Claude should re-read linked files before trusting stale insights
+- Use `validate_insight` to mark insights as still valid (refreshes hashes) or deprecated
 
 ### Admin Tools
 

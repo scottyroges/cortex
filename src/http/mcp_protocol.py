@@ -360,6 +360,42 @@ MCP_TOOL_SCHEMAS = [
             "required": ["initiative"],
         },
     },
+    {
+        "name": "validate_insight",
+        "description": "Validate a stored insight against current code state. Use this after re-reading linked files to confirm whether a stale insight is still accurate. Can mark invalid insights as deprecated and optionally create a replacement.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "insight_id": {
+                    "type": "string",
+                    "description": "The insight ID to validate (e.g., 'insight:abc123')",
+                },
+                "validation_result": {
+                    "type": "string",
+                    "enum": ["still_valid", "partially_valid", "no_longer_valid"],
+                    "description": "Your assessment after re-reading the linked files",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Optional notes about what changed or why validation failed",
+                },
+                "deprecate": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If True and validation_result is 'no_longer_valid', mark insight as deprecated",
+                },
+                "replacement_insight": {
+                    "type": "string",
+                    "description": "If deprecating, optionally provide updated insight content to save as replacement",
+                },
+                "repository": {
+                    "type": "string",
+                    "description": "Repository identifier (optional)",
+                },
+            },
+            "required": ["insight_id", "validation_result"],
+        },
+    },
 ]
 
 
@@ -384,6 +420,7 @@ def _get_tool_map():
         set_initiative,
         set_repo_context,
         summarize_initiative,
+        validate_insight,
     )
     return {
         "orient_session": orient_session,
@@ -404,6 +441,7 @@ def _get_tool_map():
         "get_cortex_version": get_cortex_version,
         "recall_recent_work": recall_recent_work,
         "summarize_initiative": summarize_initiative,
+        "validate_insight": validate_insight,
     }
 
 
