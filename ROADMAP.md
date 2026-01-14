@@ -68,24 +68,50 @@ Cortex fills this gap by storing:
 
 ---
 
-## Phase 3: Zero-Friction Capture 🔄
+## Phase 3: Zero-Friction & Developer Experience 🔄
 
-*The automation gap is the #1 barrier to reliable memory. If capture requires manual discipline, it won't happen consistently.*
+*Reduce barriers to adoption and usage. Make Cortex effortless to install, use, and explore.*
 
-### High Priority
+### Memory Browser (High Priority)
+
+*"What do I actually have stored?" - Make memory visible and explorable.*
+
+| Feature | Description | Value |
+|---------|-------------|-------|
+| **TUI Browser** | `cortex browse` - Terminal-based memory explorer. List notes, insights, initiatives. Filter by repo/type. | Immediate visibility, no web server |
+| **Stats Dashboard** | Show counts by type, storage size, staleness warnings. | Understand what's in memory |
+| **Search Preview** | Interactive search with result preview in terminal. | Faster exploration than MCP round-trips |
+
+### Installation & Updates (High Priority)
+
+*Zero-friction onboarding and maintenance.*
+
+| Feature | Description | Value |
+|---------|-------------|-------|
+| **One-Line Installer** | `curl -fsSL https://get.cortex.dev \| bash` - Downloads, configures Claude Code MCP settings, pulls Docker image. | Zero-friction onboarding |
+| **Auto-Update Check** | `orient_session` returns `update_available: true` when newer version exists. Prompt user to update. | Users stay current without manual checking |
+| **`cortex update`** | Single command pulls latest image, migrates data if needed, restarts daemon. | Painless updates |
+| **Health Check** | `cortex doctor` - Verify Docker running, ports available, ChromaDB accessible, MCP connection working. | Debug installation issues |
+| **Migration System** | Detect schema version, auto-run migrations on startup. Backup before migrate. | Breaking changes don't break users |
+
+### Auto-Capture (Medium Priority)
+
+*Eliminate manual discipline requirements.*
 
 | Feature | Description | Value |
 |---------|-------------|-------|
 | **Session Lifecycle Hooks** | Integration with Claude Code hooks to auto-capture session summaries on exit. LLM generates summary from transcript. | Eliminates manual `commit_to_cortex` |
 | **Git Commit Watcher** | Background process watches for git commits, auto-indexes changed files + commit messages. | Memory stays fresh automatically |
 | **Session Auto-Prompt** | Detect significant sessions (token count, file edits, time) and prompt to save before closing. | Catch sessions that would be lost |
+| **Log Eater** | Ingest `~/.claude/sessions` logs with LLM summarization. Backfill memory retroactively. | Memory from past sessions without workflow change |
 
-### Medium Priority
+### Lower Priority
 
 | Feature | Description | Value |
 |---------|-------------|-------|
-| **Log Eater** | Ingest `~/.claude/sessions` logs with LLM summarization. Backfill memory retroactively. | Memory from past sessions without workflow change |
-| **Convention Prompts** | After completing tasks, prompt: "Save the pattern you used." | Build institutional knowledge over time |
+| **Homebrew Formula** | `brew install cortex-memory` - Native package for macOS users. | Platform-native experience |
+| **Version Pinning** | Allow users to pin to specific version in config. | Stability for production use |
+| **Linux/Windows Packages** | apt/dnf packages, WSL2 support | Broader platform support |
 
 ---
 
@@ -114,12 +140,23 @@ Cortex fills this gap by storing:
 
 *Fill the gaps that Grep fundamentally cannot address.*
 
+### Codebase Understanding
+
 | Feature | Description | Value |
 |---------|-------------|-------|
 | **Dependency Graph** | Parse imports during ingest. Build file→file relationships. | "What depends on X?" / Impact analysis |
 | **Entry Point Map** | Systematic capture of "where does feature X start?" | Navigation knowledge |
 | **Cross-File Relationships** | Track which files are commonly edited together. | "Related files" for context |
 | **Architecture Detection** | Identify patterns: monorepo structure, layer boundaries, module purposes. | Automatic codebase orientation |
+
+### Datastore Management
+
+| Feature | Description | Value |
+|---------|-------------|-------|
+| **Async Operations** | Background processing for large ingests | Non-blocking workflows |
+| **Datastore Analysis** | Stats by type, repository, storage size | Understand storage usage |
+| **Cleanup Tools** | Remove orphaned chunks, stale entries | Keep index healthy |
+| **Selective Purge** | Delete by repository, branch, type, date range | Fine-grained cleanup |
 
 ---
 
@@ -147,79 +184,6 @@ Cortex fills this gap by storing:
 | **Multi-User** | Team-shared memory with access control |
 | **Memory Sync** | Sync across machines (personal cloud backup) |
 | **Federated Routing** | Shard by domain for large codebases |
-
----
-
-## Datastore Management
-
-*Maintenance and cleanup tools.*
-
-| Feature | Description |
-|---------|-------------|
-| Async Operations | Background processing for large ingests |
-| Datastore Analysis | Stats by type, repository, storage size |
-| Cleanup Tools | Remove orphaned chunks, stale entries |
-| Selective Purge | Delete by repository, branch, type, date range |
-
----
-
-## Installation & Updates
-
-*Make Cortex easy to install, update, and maintain.*
-
-### High Priority
-
-| Feature | Description | Value |
-|---------|-------------|-------|
-| **One-Line Installer** | `curl -fsSL https://get.cortex.dev \| bash` - Downloads, configures Claude Code MCP settings, pulls Docker image. | Zero-friction onboarding |
-| **Auto-Update Check** | `orient_session` returns `update_available: true` when newer version exists. Prompt user to update. | Users stay current without manual checking |
-| **`cortex update`** | Single command pulls latest image, migrates data if needed, restarts daemon. | Painless updates |
-| **Health Check** | `cortex doctor` - Verify Docker running, ports available, ChromaDB accessible, MCP connection working. | Debug installation issues |
-
-### Medium Priority
-
-| Feature | Description | Value |
-|---------|-------------|-------|
-| **Migration System** | Detect schema version, auto-run migrations on startup. Backup before migrate. | Breaking changes don't break users |
-| **Homebrew Formula** | `brew install cortex-memory` - Native package for macOS users. | Platform-native experience |
-| **Version Pinning** | Allow users to pin to specific version in config. Skip auto-update prompts. | Stability for production use |
-| **Uninstall Command** | `cortex uninstall` - Remove Docker image, optionally delete data, clean MCP config. | Clean removal |
-
-### Lower Priority
-
-| Feature | Description | Value |
-|---------|-------------|-------|
-| **Linux Packages** | apt/dnf packages for Linux distributions | Broader platform support |
-| **Windows Support** | WSL2-based installation path | Windows developer audience |
-| **Offline Install** | Bundle Docker image for air-gapped environments | Enterprise/secure environments |
-
----
-
-## To Explore: Memory Browser UI
-
-*Should Cortex have a visual interface for browsing stored memory?*
-
-**The idea:** Memory as living documentation - browse insights, notes, initiatives visually instead of only through search.
-
-**Why it might be valuable:**
-- **Discoverability** - "What do I actually have stored?" is hard to answer without a UI
-- **Trust** - See what Cortex knows before relying on it
-- **Maintenance** - Find stale insights, orphaned data, cleanup candidates
-- **Onboarding** - Browse memory to understand a codebase you're new to
-
-**Feasibility:** High - existing HTTP endpoints (`/debug/*`, `/search`, `/mcp/tools/call`) already expose all data. Primarily a frontend exercise.
-
-**Options to consider:**
-| Approach | Effort | Notes |
-|----------|--------|-------|
-| Static HTML dashboard | Low | Stats, doc list, basic search |
-| Full SPA (React/Vue) | Medium | Rich filtering, timeline views, initiative boards |
-| TUI (`cortex browse`) | Low | Terminal-based browser, no web server needed |
-
-**Open questions:**
-- Who's the audience? Personal tool vs. feature for all users?
-- Read-only browsing, or also editing/managing memory?
-- Worth the maintenance burden of a frontend?
 
 ---
 
@@ -251,19 +215,3 @@ Cortex fills this gap by storing:
 - 🔄 In progress / Next up
 - ⬜ Not started
 
----
-
-## Priority Summary
-
-**Do Now (Phase 3-4):**
-1. Session lifecycle hooks - zero-friction capture
-2. Type-based search scoring - surface understanding first
-3. Git commit watcher - keep memory fresh
-
-**Do Next (Phase 5):**
-4. Dependency graph - impact analysis
-5. Entry point detection - navigation
-
-**Do Later (Phase 6-7):**
-6. Error database, documentation ingest
-7. Team features, cross-project intelligence
