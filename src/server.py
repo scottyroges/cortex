@@ -20,8 +20,8 @@ from logging_config import get_logger, setup_logging
 from src.tools import (
     commit_to_cortex,
     configure_cortex,
-    get_context_from_cortex,
     get_cortex_version,
+    get_repo_context,
     get_skeleton,
     ingest_code_into_cortex,
     insight_to_cortex,
@@ -61,7 +61,7 @@ mcp.tool()(insight_to_cortex)
 # Context
 mcp.tool()(set_repo_context)
 mcp.tool()(set_initiative)
-mcp.tool()(get_context_from_cortex)
+mcp.tool()(get_repo_context)
 
 # Recall (Session Memory)
 mcp.tool()(recall_recent_work)

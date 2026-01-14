@@ -6,7 +6,7 @@ All MCP tool implementations organized by function.
 
 from src.tools.admin import configure_cortex, get_cortex_version, get_skeleton
 from src.tools.context import (
-    get_context_from_cortex,
+    get_repo_context,
     set_initiative,
     set_repo_context,
 )
@@ -37,7 +37,7 @@ __all__ = [
     # Context
     "set_repo_context",
     "set_initiative",  # Legacy - use create_initiative instead
-    "get_context_from_cortex",
+    "get_repo_context",
     # Initiatives
     "create_initiative",
     "list_initiatives",

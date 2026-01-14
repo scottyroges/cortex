@@ -112,6 +112,9 @@ def orient_session(
         # Fetch all active initiatives
         active_initiatives = _fetch_active_initiatives(collection, repo_name)
 
+        # Fetch recent work highlights
+        recent_work = _fetch_recent_work(collection, repo_name)
+
         # Fallback to legacy initiative if no new-format initiatives
         legacy_initiative = None
         if not focused_initiative and not active_initiatives:
@@ -135,6 +138,15 @@ def orient_session(
 
         if tech_stack:
             response["tech_stack"] = tech_stack
+        else:
+            response["prompt_set_context"] = (
+                "No repo context set. Use set_repo_context to describe "
+                "this project's tech stack and patterns."
+            )
+
+        # Include recent work highlights
+        if recent_work:
+            response["recent_work"] = recent_work
 
         # Include initiative data
         if focused_initiative:
@@ -287,6 +299,72 @@ def _fetch_focused_initiative(collection, repo_name: str) -> Optional[dict]:
         logger.warning(f"Failed to fetch focused initiative: {e}")
 
     return None
+
+
+def _fetch_recent_work(collection, repo_name: str, days: int = 7, limit: int = 5) -> list:
+    """Fetch brief highlights of recent work (commits/notes)."""
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+        # Query recent commits and notes
+        results = collection.get(
+            where={
+                "$and": [
+                    {"repository": repo_name},
+                    {"type": {"$in": ["commit", "note"]}},
+                ]
+            },
+            include=["documents", "metadatas"],
+        )
+
+        # Filter by date and extract highlights
+        items = []
+        for i, doc_id in enumerate(results.get("ids", [])):
+            meta = results["metadatas"][i] if results.get("metadatas") else {}
+            doc = results["documents"][i] if results.get("documents") else ""
+
+            created_at = meta.get("created_at", "")
+            if not created_at:
+                continue
+
+            try:
+                item_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                if item_date < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
+            # Extract highlight: use title if available, otherwise first line of content
+            title = meta.get("title", "")
+            if not title and doc:
+                # For commits, try to extract a meaningful summary
+                first_line = doc.split("\n")[0].strip()
+                # Skip "Session Summary:" prefix if present
+                if first_line.lower().startswith("session summary"):
+                    lines = [l.strip() for l in doc.split("\n") if l.strip()]
+                    title = lines[1] if len(lines) > 1 else first_line
+                else:
+                    title = first_line[:100]
+
+            if title:
+                items.append({
+                    "created_at": created_at,
+                    "highlight": title,
+                })
+
+        # Sort by date descending and limit
+        items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        items = items[:limit]
+
+        # Return just the highlights
+        return [item["highlight"] for item in items]
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch recent work: {e}")
+
+    return []
 
 
 def _fetch_active_initiatives(collection, repo_name: str) -> list:

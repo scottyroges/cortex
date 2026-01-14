@@ -260,7 +260,7 @@ MCP_TOOL_SCHEMAS = [
         },
     },
     {
-        "name": "get_context_from_cortex",
+        "name": "get_repo_context",
         "description": "Get stored tech stack and initiative context for a repository.",
         "inputSchema": {
             "type": "object",
@@ -407,7 +407,7 @@ def _get_tool_map():
         configure_cortex,
         create_initiative,
         focus_initiative,
-        get_context_from_cortex,
+        get_repo_context,
         get_cortex_version,
         get_skeleton,
         ingest_code_into_cortex,
@@ -435,7 +435,7 @@ def _get_tool_map():
         "list_initiatives": list_initiatives,
         "focus_initiative": focus_initiative,
         "complete_initiative": complete_initiative,
-        "get_context_from_cortex": get_context_from_cortex,
+        "get_repo_context": get_repo_context,
         "configure_cortex": configure_cortex,
         "get_skeleton": get_skeleton,
         "get_cortex_version": get_cortex_version,

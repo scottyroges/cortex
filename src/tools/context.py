@@ -159,7 +159,7 @@ def set_initiative(
         })
 
 
-def get_context_from_cortex(
+def get_repo_context(
     repository: str,
 ) -> str:
     """
