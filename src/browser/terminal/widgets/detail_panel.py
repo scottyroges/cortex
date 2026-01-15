@@ -89,7 +89,7 @@ class DetailPanel(Widget):
     """
 
     document: reactive[Document | None] = reactive(None)
-    loading: reactive[bool] = reactive(False)
+    is_loading: reactive[bool] = reactive(False)
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -105,9 +105,9 @@ class DetailPanel(Widget):
         if document is not None:
             self._render_document(document)
 
-    def watch_loading(self, loading: bool) -> None:
+    def watch_is_loading(self, is_loading: bool) -> None:
         """React to loading state changes."""
-        if loading:
+        if is_loading:
             self._show_loading()
 
     def _render_document(self, doc: Document) -> None:
@@ -188,16 +188,16 @@ class DetailPanel(Widget):
 
     def set_document(self, document: Document) -> None:
         """Update with a document."""
-        self.loading = False
+        self.is_loading = False
         self.document = document
 
-    def set_loading(self) -> None:
+    def set_is_loading(self) -> None:
         """Set loading state."""
-        self.loading = True
+        self.is_loading = True
 
     def set_error(self, message: str) -> None:
         """Set error state."""
-        self.loading = False
+        self.is_loading = False
         body = self.query_one("#detail-body", VerticalScroll)
         body.remove_children()
         body.mount(Static(f"[red]Error: {message}[/red]", classes="detail-empty"))

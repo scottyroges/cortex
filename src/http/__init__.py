@@ -5,8 +5,11 @@ FastAPI-based HTTP endpoints for browsing, API access, and MCP protocol.
 """
 
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.http.api import router as api_router
 from src.http.browse import router as browse_router
@@ -38,6 +41,22 @@ app.include_router(mcp_router, prefix="/mcp", tags=["mcp"])
 def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+# Serve static web UI files
+STATIC_DIR = Path(__file__).parent.parent.parent / "static"
+
+if STATIC_DIR.exists():
+    # Serve static assets (JS, CSS, images)
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/ui/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/ui")
+    @app.get("/ui/{full_path:path}")
+    async def serve_spa(full_path: str = "") -> FileResponse:
+        """Serve the SPA for all /ui/* routes."""
+        return FileResponse(STATIC_DIR / "index.html")
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8080):

@@ -119,7 +119,7 @@ class ListBrowser(Widget):
     """
 
     documents: reactive[list[DocumentSummary]] = reactive(list)
-    loading: reactive[bool] = reactive(True)
+    is_loading: reactive[bool] = reactive(True)
     selected_repo: reactive[str] = reactive("all")
     selected_type: reactive[str] = reactive("all")
 
@@ -223,17 +223,17 @@ class ListBrowser(Widget):
 
     def set_documents(self, documents: list[DocumentSummary]) -> None:
         """Update the document list."""
-        self.loading = False
+        self.is_loading = False
         self.documents = documents
 
-    def set_loading(self) -> None:
+    def set_is_loading(self) -> None:
         """Set loading state."""
-        self.loading = True
+        self.is_loading = True
         self._show_loading()
 
     def set_error(self, message: str) -> None:
         """Set error state."""
-        self.loading = False
+        self.is_loading = False
         list_view = self.query_one("#doc-list", ListView)
         list_view.clear()
         list_view.mount(Static(f"[red]Error: {message}[/red]", classes="list-empty"))

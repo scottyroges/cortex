@@ -48,7 +48,7 @@ class DetailScreen(Screen):
     async def on_mount(self) -> None:
         """Load the document when screen is mounted."""
         detail_panel = self.query_one("#detail", DetailPanel)
-        detail_panel.set_loading()
+        detail_panel.set_is_loading()
 
         try:
             doc = await self.client.get_document(self.doc_id)

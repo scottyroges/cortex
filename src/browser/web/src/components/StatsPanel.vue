@@ -1,0 +1,72 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import type { Stats } from '../types'
+import { client } from '../api/client'
+
+const stats = ref<Stats | null>(null)
+const loading = ref(true)
+const error = ref<string | null>(null)
+
+async function loadStats() {
+  loading.value = true
+  error.value = null
+  try {
+    stats.value = await client.getStats()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to load stats'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadStats)
+
+defineExpose({ refresh: loadStats })
+</script>
+
+<template>
+  <div class="card p-4 h-full overflow-auto">
+    <h2 class="text-lg font-semibold mb-4 text-gray-100">Memory Stats</h2>
+
+    <div v-if="loading" class="text-gray-400">Loading...</div>
+
+    <div v-else-if="error" class="text-red-400 text-sm">{{ error }}</div>
+
+    <div v-else-if="stats" class="space-y-4">
+      <div>
+        <div class="text-3xl font-bold text-blue-400">
+          {{ stats.total_documents.toLocaleString() }}
+        </div>
+        <div class="text-sm text-gray-400">Total Documents</div>
+      </div>
+
+      <div v-if="Object.keys(stats.by_type).length > 0">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">By Type</h3>
+        <ul class="space-y-1">
+          <li
+            v-for="(count, type) in stats.by_type"
+            :key="type"
+            class="flex justify-between text-sm"
+          >
+            <span class="text-gray-400 capitalize">{{ type }}</span>
+            <span class="text-gray-200 font-medium">{{ count }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="Object.keys(stats.by_repository).length > 0">
+        <h3 class="text-sm font-medium text-gray-300 mb-2">By Repository</h3>
+        <ul class="space-y-1">
+          <li
+            v-for="(count, repo) in stats.by_repository"
+            :key="repo"
+            class="flex justify-between text-sm"
+          >
+            <span class="text-gray-400 truncate mr-2">{{ repo }}</span>
+            <span class="text-gray-200 font-medium">{{ count }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</template>

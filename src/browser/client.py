@@ -43,7 +43,10 @@ class CortexClient:
         stats = await client.get_stats()
     """
 
-    def __init__(self, base_url: str = "http://localhost:8080"):
+    def __init__(self, base_url: str | None = None):
+        import os
+        if base_url is None:
+            base_url = os.environ.get("CORTEX_DAEMON_URL", "http://localhost:8000")
         self.base_url = base_url.rstrip("/")
         self._timeout = 10.0  # seconds
 

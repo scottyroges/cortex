@@ -65,7 +65,7 @@ class StatsPanel(Widget):
     """
 
     stats: reactive[Stats | None] = reactive(None)
-    loading: reactive[bool] = reactive(True)
+    is_loading: reactive[bool] = reactive(True)
     error: reactive[str | None] = reactive(None)
 
     def compose(self) -> ComposeResult:
@@ -80,10 +80,10 @@ class StatsPanel(Widget):
         if stats is not None:
             self._render_stats(stats)
 
-    def watch_loading(self, loading: bool) -> None:
+    def watch_is_loading(self, is_loading: bool) -> None:
         """React to loading state changes."""
         content = self.query_one("#stats-content", Static)
-        if loading:
+        if is_loading:
             content.update("Loading...")
             content.add_class("stats-loading")
             content.remove_class("stats-error")
@@ -148,16 +148,16 @@ class StatsPanel(Widget):
 
     def set_stats(self, stats: Stats) -> None:
         """Update the stats display."""
-        self.loading = False
+        self.is_loading = False
         self.error = None
         self.stats = stats
 
-    def set_loading(self) -> None:
+    def set_is_loading(self) -> None:
         """Set loading state."""
-        self.loading = True
+        self.is_loading = True
         self.error = None
 
     def set_error(self, message: str) -> None:
         """Set error state."""
-        self.loading = False
+        self.is_loading = False
         self.error = message

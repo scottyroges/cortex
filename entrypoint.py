@@ -18,9 +18,10 @@ def main():
 
     if mode == "daemon":
         # Run HTTP server as daemon
+        import os
         from src.http import run_server
-        # Use port 8000 for MCP daemon (8080 reserved for debug/phase2)
-        run_server(host="0.0.0.0", port=8000)
+        port = int(os.environ.get("CORTEX_HTTP_PORT", "8080"))
+        run_server(host="0.0.0.0", port=port)
 
     elif mode == "bridge":
         # Run stdio-to-HTTP bridge

@@ -266,9 +266,10 @@ start_daemon() {
     docker run -d \
         --name "$DAEMON_CONTAINER_NAME" \
         --restart unless-stopped \
-        -p "${DAEMON_PORT}:8000" \
+        -p "${DAEMON_PORT}:8080" \
         -p "${HTTP_PORT}:8080" \
         "${DOCKER_VOLUMES[@]}" \
+        -e "CORTEX_HTTP_PORT=8080" \
         "${DOCKER_ENVS[@]}" \
         "$IMAGE_NAME" daemon >&2
 

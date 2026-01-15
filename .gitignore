@@ -39,3 +39,7 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Web frontend
+src/browser/web/node_modules/
+static/

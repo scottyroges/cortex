@@ -1,3 +1,15 @@
+# Stage 1: Build frontend
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /web
+COPY src/browser/web/package.json ./
+RUN npm install
+
+COPY src/browser/web/ ./
+RUN npm run build
+
+
+# Stage 2: Python application
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -20,13 +32,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy built frontend from builder stage
+COPY --from=frontend-builder /web/dist /app/static
+
 # Create persistence directory
 RUN mkdir -p /app/cortex_db
 
-# Expose ports:
-#   8000 - MCP daemon HTTP API
-#   8080 - Debug/Phase 2 HTTP endpoints
-EXPOSE 8000 8080
+# Expose HTTP port (serves MCP API + Web UI)
+# User configures host ports via daemon_port and http_port settings
+EXPOSE 8080
 
 # Entrypoint dispatcher supports multiple modes:
 #   daemon  - Run HTTP server for MCP requests (default)

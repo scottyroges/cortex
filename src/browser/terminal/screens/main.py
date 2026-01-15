@@ -102,8 +102,8 @@ class MainScreen(Screen):
         stats_panel = self.query_one("#stats", StatsPanel)
         list_browser = self.query_one("#list", ListBrowser)
 
-        stats_panel.set_loading()
-        list_browser.set_loading()
+        stats_panel.set_is_loading()
+        list_browser.set_is_loading()
 
         try:
             # Load stats and documents in parallel
@@ -148,7 +148,7 @@ class MainScreen(Screen):
     async def _show_document(self, doc_id: str) -> None:
         """Load and display a document in the detail panel."""
         detail_panel = self.query_one("#detail", DetailPanel)
-        detail_panel.set_loading()
+        detail_panel.set_is_loading()
 
         try:
             doc = await self.client.get_document(doc_id)

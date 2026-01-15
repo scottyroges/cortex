@@ -123,7 +123,7 @@ def browse_list(
     repository: Optional[str] = None,
     doc_type: Optional[str] = Query(default=None, alias="type"),
     limit: int = Query(default=50, le=500),
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """
     List documents with optional filtering.
 
@@ -155,20 +155,23 @@ def browse_list(
         include=["metadatas"],
     )
 
-    return [
-        {"id": doc_id, "metadata": meta}
-        for doc_id, meta in zip(results["ids"], results["metadatas"])
-    ]
+    return {
+        "documents": [
+            {"id": doc_id, "metadata": meta}
+            for doc_id, meta in zip(results["ids"], results["metadatas"])
+        ]
+    }
 
 
-@router.get("/get/{doc_id}")
-def browse_get(doc_id: str) -> dict[str, Any]:
+@router.get("/get")
+def browse_get(id: str = Query(..., alias="id")) -> dict[str, Any]:
     """
     Get a specific document by ID.
 
     Args:
-        doc_id: Document ID
+        id: Document ID (passed as query param to handle slashes in IDs)
     """
+    doc_id = id
     logger.info(f"Browse get requested: doc_id={doc_id}")
     collection = get_collection()
 
