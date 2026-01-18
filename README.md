@@ -65,65 +65,69 @@ The `--scope user` flag makes Cortex available in all projects. Then restart Cla
 
 ## Configuration
 
-### Settings File
+### Config File
 
-Cortex configuration lives at `~/.cortex/settings.json`. Create it with `cortex init` or edit manually:
+Cortex configuration lives at `~/.cortex/config.yaml`. Create it with `cortex init` or edit manually:
 
-```json
-{
-  "code_paths": ["~/Projects", "~/Work"],
-  "header_provider": "none",
-  "debug": false,
-  "daemon_port": 8000,
-  "http_port": 8080
-}
+```yaml
+# Directories containing code to index (mounted into Docker)
+code_paths:
+  - ~/Projects
+  - ~/Work
+
+# Daemon port for MCP communication
+daemon_port: 8000
+
+# HTTP debug server port
+http_port: 8080
+
+# Enable debug logging
+debug: false
+
+# LLM provider for summarization
+llm:
+  primary_provider: "claude-cli"
+
+# Auto-capture settings
+autocapture:
+  enabled: true
 ```
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `code_paths` | string[] | `[]` | Directories containing code to index |
-| `header_provider` | string | `"none"` | `"none"`, `"claude-cli"`, or `"anthropic"` |
+| `code_paths` | list | `[]` | Directories containing code to index |
 | `debug` | bool | `false` | Enable debug logging |
 | `daemon_port` | int | `8000` | Daemon port for MCP communication |
 | `http_port` | int | `8080` | HTTP debug server port |
+| `llm.primary_provider` | string | `"claude-cli"` | LLM provider for summarization |
+| `autocapture.enabled` | bool | `true` | Enable auto-capture on session end |
 
 ### Managing Configuration
 
 ```bash
-# View current settings
+# View current config
 cortex config
 
-# Edit settings in your $EDITOR
+# Edit config in your $EDITOR
 cortex config edit
 ```
 
-After changing settings, restart the daemon:
+After changing config, restart the daemon:
 ```bash
 cortex daemon restart
 ```
 
 ### Environment Variable Overrides
 
-Environment variables can override settings.json (useful for CI/testing):
+Environment variables can override config.yaml (useful for CI/testing):
 
 | Variable | Description |
 |----------|-------------|
 | `CORTEX_CODE_PATHS` | Comma-separated code directories |
-| `CORTEX_HEADER_PROVIDER` | Header provider |
 | `CORTEX_DEBUG` | Enable debug logging |
 | `CORTEX_DAEMON_PORT` | Daemon port (default: `8000`) |
 | `CORTEX_HTTP_PORT` | HTTP debug server port (default: `8080`) |
-| `ANTHROPIC_API_KEY` | Required for `header_provider=anthropic` |
-
-### Header Providers
-
-Contextual headers add AI-generated summaries to each code chunk:
-
-| Provider | Description |
-|----------|-------------|
-| `none` | No headers (fastest, default) |
-| `claude-cli` | Uses Claude CLI - leverages your existing Claude auth |
-| `anthropic` | Uses Anthropic API - requires `ANTHROPIC_API_KEY` |
+| `ANTHROPIC_API_KEY` | Required for LLM provider="anthropic" |
 
 ## Daemon Management
 
@@ -383,11 +387,9 @@ Files with unsupported extensions are still indexed using generic text splitting
 
 ### Debug Logging
 
-Enable debug logging in `~/.cortex/settings.json`:
-```json
-{
-  "debug": true
-}
+Enable debug logging in `~/.cortex/config.yaml`:
+```yaml
+debug: true
 ```
 
 Then restart the daemon and tail the log:
@@ -543,7 +545,7 @@ Cortex/
 ├── src/
 │   ├── server.py          # MCP server entry point
 │   ├── version.py         # Version checking and update detection
-│   ├── config.py          # Configuration (settings.json + config.yaml)
+│   ├── config.py          # Configuration (config.yaml)
 │   ├── tools/             # MCP tool implementations
 │   │   ├── orient.py      # orient_session (session entry point)
 │   │   ├── search.py      # search_cortex

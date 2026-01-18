@@ -4,9 +4,9 @@
 #
 # Usage:
 #   cortex              - Default: auto-start daemon if needed, run bridge
-#   cortex init         - Interactive setup, creates ~/.cortex/settings.json
+#   cortex init         - Interactive setup, creates ~/.cortex/config.yaml
 #   cortex config       - Show current configuration
-#   cortex config edit  - Open settings.json in $EDITOR
+#   cortex config edit  - Open config.yaml in $EDITOR
 #   cortex daemon start - Start the daemon
 #   cortex daemon stop  - Stop the daemon
 #   cortex daemon restart - Restart the daemon
@@ -15,16 +15,15 @@
 #   cortex stdio        - Run in legacy stdio mode (no daemon)
 #
 # Configuration:
-#   Settings are stored in ~/.cortex/settings.json
+#   Settings are stored in ~/.cortex/config.yaml
 #   Run 'cortex init' to create this file interactively.
 #
-# Environment variables (override settings.json):
+# Environment variables (override config.yaml):
 #   CORTEX_CODE_PATHS    - Comma-separated list of code directories to mount
 #   CORTEX_DATA_PATH     - Where to store Cortex data (default: ~/.cortex)
-#   CORTEX_HEADER_PROVIDER - Header provider: "anthropic", "claude-cli", or "none"
 #   CORTEX_DEBUG         - Enable debug logging (true/false)
 #   CORTEX_DAEMON_PORT   - Daemon port (default: 8000)
-#   ANTHROPIC_API_KEY    - Required for header_provider="anthropic"
+#   ANTHROPIC_API_KEY    - Required for LLM provider="anthropic"
 #
 
 # --- Configuration ---
@@ -57,104 +56,119 @@ get_script_dir() {
 
 CORTEX_SRC_DIR="$(get_script_dir)"
 
-# Settings file location
-SETTINGS_FILE="$DATA_PATH/settings.json"
+# Config file location
+CONFIG_FILE="$DATA_PATH/config.yaml"
 
-# Settings values (loaded from file, can be overridden by env vars)
-SETTINGS_CODE_PATHS=""
-SETTINGS_HEADER_PROVIDER=""
-SETTINGS_DEBUG=""
-SETTINGS_HTTP_PORT=""
-SETTINGS_DAEMON_PORT=""
+# Config values (loaded from file, can be overridden by env vars)
+CONFIG_CODE_PATHS=""
+CONFIG_DEBUG=""
+CONFIG_HTTP_PORT=""
+CONFIG_DAEMON_PORT=""
 
 # Track env var overrides (for display purposes)
 ENV_OVERRIDE_CODE_PATHS=""
-ENV_OVERRIDE_HEADER_PROVIDER=""
 ENV_OVERRIDE_DEBUG=""
 ENV_OVERRIDE_HTTP_PORT=""
 ENV_OVERRIDE_DAEMON_PORT=""
 
-load_settings() {
-    # Capture original env vars before loading settings
+load_config() {
+    # Capture original env vars before loading config
     local orig_code_paths="$CODE_PATHS"
-    local orig_header_provider="$CORTEX_HEADER_PROVIDER"
     local orig_debug="$CORTEX_DEBUG"
     local orig_http_port="$CORTEX_HTTP_PORT"
     local orig_daemon_port="$CORTEX_DAEMON_PORT"
 
-    # Load settings from ~/.cortex/settings.json if it exists
-    if [ -f "$SETTINGS_FILE" ]; then
-        # Parse JSON using python3 (available on most systems)
-        local settings
-        settings=$(python3 -c "
-import json
+    # Load config from ~/.cortex/config.yaml if it exists
+    if [ -f "$CONFIG_FILE" ]; then
+        # Parse YAML using python3 (available on most systems)
+        local config
+        config=$(python3 -c "
 import sys
 try:
-    with open('$SETTINGS_FILE') as f:
-        s = json.load(f)
-    # Output as shell-friendly format
-    paths = s.get('code_paths', [])
-    if isinstance(paths, list):
-        print('CODE_PATHS=' + ','.join(paths))
-    print('HEADER_PROVIDER=' + str(s.get('header_provider', '')))
-    print('DEBUG=' + str(s.get('debug', '')).lower())
-    print('HTTP_PORT=' + str(s.get('http_port', '')))
-    print('DAEMON_PORT=' + str(s.get('daemon_port', '')))
-except Exception as e:
-    print('ERROR=' + str(e), file=sys.stderr)
-    sys.exit(1)
+    import yaml
+    with open('$CONFIG_FILE') as f:
+        c = yaml.safe_load(f) or {}
+except ImportError:
+    # Fallback: simple YAML parsing without PyYAML
+    c = {}
+    with open('$CONFIG_FILE') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if ':' in line and not line.startswith(' ') and not line.startswith('-'):
+                key, val = line.split(':', 1)
+                key = key.strip()
+                val = val.strip()
+                if val and not val.startswith('#'):
+                    # Remove quotes
+                    if (val.startswith('\"') and val.endswith('\"')) or (val.startswith(\"'\") and val.endswith(\"'\")):
+                        val = val[1:-1]
+                    # Boolean
+                    if val.lower() == 'true':
+                        val = True
+                    elif val.lower() == 'false':
+                        val = False
+                    # Number
+                    else:
+                        try:
+                            val = int(val)
+                        except ValueError:
+                            pass
+                    c[key] = val
+
+# Output as shell-friendly format
+paths = c.get('code_paths', [])
+if isinstance(paths, list):
+    print('CODE_PATHS=' + ','.join(str(p) for p in paths))
+print('DEBUG=' + str(c.get('debug', '')).lower())
+print('HTTP_PORT=' + str(c.get('http_port', '')))
+print('DAEMON_PORT=' + str(c.get('daemon_port', '')))
 " 2>/dev/null)
 
         if [ $? -eq 0 ]; then
             # Parse the output
             while IFS='=' read -r key value; do
                 case "$key" in
-                    CODE_PATHS) SETTINGS_CODE_PATHS="$value" ;;
-                    HEADER_PROVIDER) SETTINGS_HEADER_PROVIDER="$value" ;;
-                    DEBUG) SETTINGS_DEBUG="$value" ;;
-                    HTTP_PORT) SETTINGS_HTTP_PORT="$value" ;;
-                    DAEMON_PORT) SETTINGS_DAEMON_PORT="$value" ;;
+                    CODE_PATHS) CONFIG_CODE_PATHS="$value" ;;
+                    DEBUG) CONFIG_DEBUG="$value" ;;
+                    HTTP_PORT) CONFIG_HTTP_PORT="$value" ;;
+                    DAEMON_PORT) CONFIG_DAEMON_PORT="$value" ;;
                 esac
-            done <<< "$settings"
+            done <<< "$config"
         fi
     fi
 
-    # Apply settings (env vars override settings file)
-    if [ -z "$CODE_PATHS" ] && [ -n "$SETTINGS_CODE_PATHS" ]; then
-        CODE_PATHS="$SETTINGS_CODE_PATHS"
-    elif [ -n "$orig_code_paths" ] && [ -n "$SETTINGS_CODE_PATHS" ]; then
+    # Apply config (env vars override config file)
+    if [ -z "$CODE_PATHS" ] && [ -n "$CONFIG_CODE_PATHS" ]; then
+        CODE_PATHS="$CONFIG_CODE_PATHS"
+    elif [ -n "$orig_code_paths" ] && [ -n "$CONFIG_CODE_PATHS" ]; then
         ENV_OVERRIDE_CODE_PATHS="true"
     fi
 
-    if [ -z "$CORTEX_HEADER_PROVIDER" ] && [ -n "$SETTINGS_HEADER_PROVIDER" ]; then
-        CORTEX_HEADER_PROVIDER="$SETTINGS_HEADER_PROVIDER"
-    elif [ -n "$orig_header_provider" ] && [ -n "$SETTINGS_HEADER_PROVIDER" ]; then
-        ENV_OVERRIDE_HEADER_PROVIDER="true"
-    fi
-
-    if [ -z "$CORTEX_DEBUG" ] && [ -n "$SETTINGS_DEBUG" ]; then
-        CORTEX_DEBUG="$SETTINGS_DEBUG"
-    elif [ -n "$orig_debug" ] && [ -n "$SETTINGS_DEBUG" ]; then
+    if [ -z "$CORTEX_DEBUG" ] && [ -n "$CONFIG_DEBUG" ]; then
+        CORTEX_DEBUG="$CONFIG_DEBUG"
+    elif [ -n "$orig_debug" ] && [ -n "$CONFIG_DEBUG" ]; then
         ENV_OVERRIDE_DEBUG="true"
     fi
 
-    # Apply http_port setting
-    if [ -z "$CORTEX_HTTP_PORT" ] && [ -n "$SETTINGS_HTTP_PORT" ]; then
-        HTTP_PORT="$SETTINGS_HTTP_PORT"
-    elif [ -n "$orig_http_port" ] && [ -n "$SETTINGS_HTTP_PORT" ]; then
+    # Apply http_port config
+    if [ -z "$CORTEX_HTTP_PORT" ] && [ -n "$CONFIG_HTTP_PORT" ]; then
+        HTTP_PORT="$CONFIG_HTTP_PORT"
+    elif [ -n "$orig_http_port" ] && [ -n "$CONFIG_HTTP_PORT" ]; then
         ENV_OVERRIDE_HTTP_PORT="true"
     fi
 
-    # Apply daemon_port setting
-    if [ -z "$CORTEX_DAEMON_PORT" ] && [ -n "$SETTINGS_DAEMON_PORT" ]; then
-        DAEMON_PORT="$SETTINGS_DAEMON_PORT"
-    elif [ -n "$orig_daemon_port" ] && [ -n "$SETTINGS_DAEMON_PORT" ]; then
+    # Apply daemon_port config
+    if [ -z "$CORTEX_DAEMON_PORT" ] && [ -n "$CONFIG_DAEMON_PORT" ]; then
+        DAEMON_PORT="$CONFIG_DAEMON_PORT"
+    elif [ -n "$orig_daemon_port" ] && [ -n "$CONFIG_DAEMON_PORT" ]; then
         ENV_OVERRIDE_DAEMON_PORT="true"
     fi
 }
 
-# Load settings on script start
-load_settings
+# Load config on script start
+load_config
 
 # --- Helper Functions ---
 
@@ -403,11 +417,11 @@ daemon_logs() {
 
 # --- Configuration Commands ---
 
-init_settings() {
+init_config() {
     echo "Cortex Setup"
     echo "============"
     echo ""
-    echo "This will create ~/.cortex/settings.json"
+    echo "This will create ~/.cortex/config.yaml"
     echo ""
 
     # Ensure data directory exists
@@ -452,21 +466,6 @@ init_settings() {
         echo ""
     fi
 
-    # Header provider
-    echo ""
-    echo "Header Provider (adds AI-generated summaries to code chunks):"
-    echo "  none      - No headers (fastest, recommended)"
-    echo "  claude-cli - Uses Claude CLI (requires claude to be installed)"
-    echo "  anthropic  - Uses Anthropic API (requires ANTHROPIC_API_KEY)"
-    echo ""
-    read -r -p "Header provider [none]: " header_provider
-    header_provider="${header_provider:-none}"
-
-    if [[ ! "$header_provider" =~ ^(none|claude-cli|anthropic)$ ]]; then
-        echo "Invalid option, using 'none'"
-        header_provider="none"
-    fi
-
     # Debug mode
     echo ""
     read -r -p "Enable debug logging? [y/N]: " debug_input
@@ -499,35 +498,72 @@ init_settings() {
         http_port="8080"
     fi
 
-    # Build JSON
-    local paths_json="[]"
+    # Build code_paths YAML
+    local paths_yaml=""
     if [ ${#paths[@]} -gt 0 ]; then
-        paths_json=$(printf '%s\n' "${paths[@]}" | python3 -c "
-import json, sys
+        paths_yaml=$(printf '%s\n' "${paths[@]}" | python3 -c "
+import sys
 paths = [line.strip() for line in sys.stdin if line.strip()]
-print(json.dumps(paths))
+for p in paths:
+    print(f'  - {p}')
 ")
+    else
+        paths_yaml="  # - ~/Projects"
     fi
 
-    # Write settings file
-    python3 -c "
-import json
-settings = {
-    'code_paths': $paths_json,
-    'header_provider': '$header_provider',
-    'debug': '$debug'.lower() == 'true',
-    'daemon_port': int('$daemon_port'),
-    'http_port': int('$http_port')
-}
-with open('$SETTINGS_FILE', 'w') as f:
-    json.dump(settings, f, indent=2)
-    f.write('\n')
-"
+    # Write config file
+    cat > "$CONFIG_FILE" << EOF
+# Cortex Configuration
+# Edit this file to customize Cortex behavior.
+
+# Daemon Settings
+# Directories containing code to index (mounted into Docker)
+code_paths:
+$paths_yaml
+
+# Daemon port for MCP communication
+daemon_port: $daemon_port
+
+# HTTP debug server port (for CLI search, web browser, and auto-capture)
+http_port: $http_port
+
+# Enable debug logging
+debug: $debug
+
+# LLM Provider Configuration
+# Used for session summarization and code header generation
+llm:
+  # Primary provider: anthropic, ollama, openrouter, claude-cli
+  primary_provider: "claude-cli"
+
+  # Fallback chain (tried in order if primary fails)
+  fallback_chain:
+    - "anthropic"
+    - "ollama"
+
+# Auto-Capture Configuration
+autocapture:
+  # Enable auto-capture on session end
+  enabled: true
+
+  # Significance thresholds (session is significant if ANY threshold is met)
+  significance:
+    min_tokens: 5000
+    min_file_edits: 1
+    min_tool_calls: 3
+
+# Runtime Settings
+runtime:
+  min_score: 0.5
+  verbose: false
+  recency_boost: true
+  recency_half_life_days: 30.0
+EOF
 
     echo ""
-    echo "Settings saved to: $SETTINGS_FILE"
+    echo "Config saved to: $CONFIG_FILE"
     echo ""
-    cat "$SETTINGS_FILE"
+    cat "$CONFIG_FILE"
     echo ""
 
     # Check if daemon needs restart
@@ -559,14 +595,14 @@ show_config() {
     echo "Cortex Configuration"
     echo "===================="
     echo ""
-    echo "Settings file: $SETTINGS_FILE"
+    echo "Config file: $CONFIG_FILE"
     echo ""
 
-    if [ -f "$SETTINGS_FILE" ]; then
-        echo "Current settings:"
-        cat "$SETTINGS_FILE"
+    if [ -f "$CONFIG_FILE" ]; then
+        echo "Current config:"
+        cat "$CONFIG_FILE"
     else
-        echo "No settings file found."
+        echo "No config file found."
         echo ""
         echo "Run 'cortex init' to create one."
     fi
@@ -574,7 +610,6 @@ show_config() {
     echo ""
     echo "Active configuration (after env var overrides):"
     echo "  code_paths: ${CODE_PATHS:-<not set>}"
-    echo "  header_provider: ${CORTEX_HEADER_PROVIDER:-<not set>}"
     echo "  debug: ${CORTEX_DEBUG:-<not set>}"
     echo "  daemon_port: $DAEMON_PORT"
     echo "  http_port: $HTTP_PORT"
@@ -582,49 +617,46 @@ show_config() {
 
     # Show any env var overrides
     if [ -n "$ENV_OVERRIDE_CODE_PATHS" ]; then
-        echo "Note: CORTEX_CODE_PATHS env var is overriding settings.json"
-    fi
-    if [ -n "$ENV_OVERRIDE_HEADER_PROVIDER" ]; then
-        echo "Note: CORTEX_HEADER_PROVIDER env var is overriding settings.json"
+        echo "Note: CORTEX_CODE_PATHS env var is overriding config.yaml"
     fi
     if [ -n "$ENV_OVERRIDE_DEBUG" ]; then
-        echo "Note: CORTEX_DEBUG env var is overriding settings.json"
+        echo "Note: CORTEX_DEBUG env var is overriding config.yaml"
     fi
     if [ -n "$ENV_OVERRIDE_DAEMON_PORT" ]; then
-        echo "Note: CORTEX_DAEMON_PORT env var is overriding settings.json"
+        echo "Note: CORTEX_DAEMON_PORT env var is overriding config.yaml"
     fi
     if [ -n "$ENV_OVERRIDE_HTTP_PORT" ]; then
-        echo "Note: CORTEX_HTTP_PORT env var is overriding settings.json"
+        echo "Note: CORTEX_HTTP_PORT env var is overriding config.yaml"
     fi
 }
 
 edit_config() {
-    if [ ! -f "$SETTINGS_FILE" ]; then
-        echo "No settings file found. Creating default..."
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "No config file found. Creating default..."
         mkdir -p "$DATA_PATH"
-        echo '{
-  "code_paths": [],
-  "header_provider": "none",
-  "debug": false,
-  "daemon_port": 8000,
-  "http_port": 8080
-}' > "$SETTINGS_FILE"
+        # Use Python to create the default config
+        python3 -c "
+import sys
+sys.path.insert(0, '$CORTEX_SRC_DIR')
+from src.config import create_default_config
+create_default_config()
+"
     fi
 
     local editor="${EDITOR:-${VISUAL:-vi}}"
-    echo "Opening $SETTINGS_FILE with $editor..."
-    "$editor" "$SETTINGS_FILE"
+    echo "Opening $CONFIG_FILE with $editor..."
+    "$editor" "$CONFIG_FILE"
 
-    # Validate JSON after editing
-    if python3 -c "import json; json.load(open('$SETTINGS_FILE'))" 2>/dev/null; then
-        echo "Settings file is valid JSON."
+    # Validate YAML after editing
+    if python3 -c "import yaml; yaml.safe_load(open('$CONFIG_FILE'))" 2>/dev/null; then
+        echo "Config file is valid YAML."
         if is_daemon_running; then
             echo ""
             echo "Note: Restart daemon to apply changes:"
             echo "  cortex daemon restart"
         fi
     else
-        echo "Warning: Settings file contains invalid JSON!"
+        echo "Warning: Config file contains invalid YAML!"
         echo "Please fix the syntax errors."
     fi
 }
@@ -1091,13 +1123,13 @@ print(f\"  Build: {data.get('build_time', 'unknown')}\")
         echo "WARN - Cannot fetch info"
     fi
 
-    # Check 7: Settings file
-    echo -n "Settings file: "
-    if [ -f "$SETTINGS_FILE" ]; then
-        if python3 -c "import json; json.load(open('$SETTINGS_FILE'))" 2>/dev/null; then
-            echo "OK ($SETTINGS_FILE)"
+    # Check 7: Config file
+    echo -n "Config file: "
+    if [ -f "$CONFIG_FILE" ]; then
+        if python3 -c "import yaml; yaml.safe_load(open('$CONFIG_FILE'))" 2>/dev/null; then
+            echo "OK ($CONFIG_FILE)"
         else
-            echo "INVALID - JSON parse error"
+            echo "INVALID - YAML parse error"
         fi
     else
         echo "MISSING - Run 'cortex init'"
@@ -1352,9 +1384,9 @@ COMMANDS:
                         Options: -t <title>, -p <project>, --tags <a,b>
     update              Update Cortex (pull, rebuild, migrate, restart)
     doctor              Check system health (add --verbose for full check)
-    init                Interactive setup, creates ~/.cortex/settings.json
+    init                Interactive setup, creates ~/.cortex/config.yaml
     config              Show current configuration
-    config edit         Open settings.json in $EDITOR
+    config edit         Open config.yaml in $EDITOR
     hooks install       Install auto-capture hooks (add -f to force reinstall)
     hooks status        Show hook installation status
     hooks repair        Reinstall hooks from latest source
@@ -1372,23 +1404,23 @@ COMMANDS:
     help, --help, -h    Show this help message
 
 CONFIGURATION:
-    Settings are stored at ~/.cortex/settings.json
+    Configuration is stored at ~/.cortex/config.yaml
     Run 'cortex init' to create this file interactively.
 
-    Settings file options:
-      code_paths        Array of directories to mount (e.g., ["~/Projects"])
-      header_provider   "none", "claude-cli", or "anthropic"
+    Config file options:
+      code_paths        List of directories to mount (e.g., ["~/Projects"])
       debug             true or false
       daemon_port       Daemon port for MCP communication (default: 8000)
       http_port         HTTP debug server port (default: 8080)
+      llm               LLM provider settings for summarization
+      autocapture       Auto-capture settings for session memory
 
-ENVIRONMENT VARIABLES (override settings.json):
+ENVIRONMENT VARIABLES (override config.yaml):
     CORTEX_CODE_PATHS       Comma-separated list of code directories
-    CORTEX_HEADER_PROVIDER  Header provider: "anthropic", "claude-cli", or "none"
     CORTEX_DEBUG            Enable debug logging (true/false)
     CORTEX_DAEMON_PORT      Daemon port (default: 8000)
     CORTEX_HTTP_PORT        HTTP debug server port (default: 8080)
-    ANTHROPIC_API_KEY       Required for header_provider="anthropic"
+    ANTHROPIC_API_KEY       Required for LLM provider="anthropic"
 
 QUICK START:
     1. Run 'cortex init' to configure your settings
@@ -1404,7 +1436,7 @@ EXAMPLES:
     cortex save -t "Decision" "We chose Redis for caching"
     cortex daemon status        # Check if daemon is healthy
     cortex daemon logs          # Debug issues
-    cortex config edit          # Modify settings
+    cortex config edit          # Modify config
     cortex daemon restart       # Apply config changes
 
 For more information, see: https://github.com/anthropics/cortex
@@ -1449,7 +1481,7 @@ case "${1:-}" in
         esac
         ;;
     init)
-        init_settings
+        init_config
         ;;
     config)
         case "${2:-}" in
@@ -1525,8 +1557,15 @@ case "${1:-}" in
             doctor_essential
         fi
         ;;
-    *)
-        # Default: run stdio bridge (auto-starts daemon if needed)
+    "")
+        # No arguments: run stdio bridge (auto-starts daemon if needed)
         run_bridge
+        ;;
+    *)
+        # Unknown command
+        echo "Error: Unknown command '$1'" >&2
+        echo "" >&2
+        echo "Run 'cortex help' for usage information." >&2
+        exit 1
         ;;
 esac

@@ -332,6 +332,21 @@ DEFAULT_CONFIG_YAML = """\
 # Cortex Configuration
 # Edit this file to customize Cortex behavior.
 
+# Daemon Settings
+# Directories containing code to index (mounted into Docker)
+code_paths:
+  # - ~/Projects
+  # - ~/Work
+
+# Daemon port for MCP communication
+daemon_port: 8000
+
+# HTTP debug server port (for CLI search, web browser, and auto-capture)
+http_port: 8080
+
+# Enable debug logging
+debug: false
+
 # LLM Provider Configuration
 # Used for session summarization and code header generation
 llm:
