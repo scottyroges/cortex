@@ -39,6 +39,9 @@ def backup_database(label: Optional[str] = None) -> str:
     backup_dir = get_backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
 
+    # Clean old backups first (keep 4, so after new backup we have 5)
+    _cleanup_old_backups(backup_dir, keep=4)
+
     # Generate backup name
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_name = f"backup_{label}_{timestamp}" if label else f"backup_{timestamp}"
@@ -46,9 +49,6 @@ def backup_database(label: Optional[str] = None) -> str:
 
     logger.info(f"Creating backup: {backup_path}")
     shutil.copytree(db_path, backup_path)
-
-    # Clean old backups (keep last 5)
-    _cleanup_old_backups(backup_dir, keep=5)
 
     return str(backup_path)
 
