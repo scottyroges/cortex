@@ -6,11 +6,10 @@ Handles version checking, comparison, and update detection.
 
 import os
 import time
-import urllib.request
-import json
 from typing import Optional
 
 from logging_config import get_logger
+from src.http.http_client import http_json_get
 
 logger = get_logger("version")
 
@@ -32,7 +31,7 @@ def get_current_version() -> dict:
     return {
         "git_commit": os.environ.get("CORTEX_GIT_COMMIT", "unknown"),
         "build_time": os.environ.get("CORTEX_BUILD_TIME", "unknown"),
-        "version": "1.4.0",
+        "version": "1.5.0",
     }
 
 
@@ -108,29 +107,28 @@ def _check_github_releases() -> Optional[dict]:
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
     try:
-        req = urllib.request.Request(
+        data = http_json_get(
             url,
             headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "Cortex"},
+            timeout=5,
         )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read())
-            latest_tag = data.get("tag_name", "")
-            current = get_current_version()
+        latest_tag = data.get("tag_name", "")
+        current = get_current_version()
 
-            # Simple version comparison (assumes semver tags like "v1.0.0")
-            latest_version = latest_tag.lstrip("v")
-            current_version = current["version"]
+        # Simple version comparison (assumes semver tags like "v1.0.0")
+        latest_version = latest_tag.lstrip("v")
+        current_version = current["version"]
 
-            if latest_version and latest_version != current_version:
-                return {
-                    "update_available": True,
-                    "latest_version": latest_version,
-                    "message": f"New version available: {latest_version} (current: {current_version}). Run 'cortex update' to update.",
-                }
+        if latest_version and latest_version != current_version:
             return {
-                "update_available": False,
-                "latest_version": latest_version or current_version,
+                "update_available": True,
+                "latest_version": latest_version,
+                "message": f"New version available: {latest_version} (current: {current_version}). Run 'cortex update' to update.",
             }
+        return {
+            "update_available": False,
+            "latest_version": latest_version or current_version,
+        }
     except Exception as e:
         logger.debug(f"GitHub releases check failed: {e}")
         return None

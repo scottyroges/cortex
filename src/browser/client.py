@@ -12,26 +12,15 @@ from src.browser.models import (
     SearchResponse,
     Stats,
 )
+from src.exceptions import (
+    APIError,
+    ClientError as CortexClientError,
+    DaemonNotRunningError,
+    DaemonTimeoutError,
+)
 
-
-class CortexClientError(Exception):
-    """Base exception for Cortex client errors."""
-    pass
-
-
-class DaemonNotRunningError(CortexClientError):
-    """Raised when the daemon is not running."""
-    pass
-
-
-class DaemonTimeoutError(CortexClientError):
-    """Raised when a request times out."""
-    pass
-
-
-class APIError(CortexClientError):
-    """Raised when the API returns an error."""
-    pass
+# Re-export for backwards compatibility
+__all__ = ["CortexClient", "CortexClientError", "DaemonNotRunningError", "DaemonTimeoutError", "APIError"]
 
 
 class CortexClient:

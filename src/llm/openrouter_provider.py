@@ -8,12 +8,12 @@ Requires OPENROUTER_API_KEY environment variable.
 import os
 import time
 from typing import Optional
-import urllib.request
-import urllib.error
-import json
 
-from .provider import LLMProvider, LLMConfig, LLMResponse
 from logging_config import get_logger
+from src.exceptions import LLMConnectionError, LLMResponseError, LLMTimeoutError
+from src.http.http_client import HTTPError, http_post
+
+from .provider import LLMConfig, LLMProvider, LLMResponse
 
 logger = get_logger("llm.openrouter")
 
@@ -57,7 +57,7 @@ class OpenRouterProvider(LLMProvider):
         """Generate completion using OpenRouter API."""
         if self._api_key is None:
             if not self.is_available():
-                raise RuntimeError("OpenRouter API key not configured")
+                raise LLMConnectionError("OpenRouter API key not configured")
 
         config = config or LLMConfig()
         model = config.model or self.default_model
@@ -73,31 +73,28 @@ class OpenRouterProvider(LLMProvider):
                 "temperature": config.temperature,
             }
 
-            req = urllib.request.Request(
+            response = http_post(
                 f"{self._base_url}/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
+                json=payload,
                 headers={
-                    "Content-Type": "application/json",
                     "Authorization": f"Bearer {self._api_key}",
                     "HTTP-Referer": "https://github.com/cortex-memory",
                     "X-Title": "Cortex Memory",
                 },
-                method="POST",
+                timeout=config.timeout,
             )
-
-            with urllib.request.urlopen(req, timeout=config.timeout) as response:
-                data = json.loads(response.read().decode())
+            data = response.json()
 
             latency_ms = (time.time() - start_time) * 1000
 
             # Extract response
             choices = data.get("choices", [])
             if not choices:
-                raise RuntimeError("OpenRouter returned no choices")
+                raise LLMResponseError("OpenRouter returned no choices")
 
             text = choices[0].get("message", {}).get("content", "")
             if not text:
-                raise RuntimeError("OpenRouter returned empty response")
+                raise LLMResponseError("OpenRouter returned empty response")
 
             # Extract token usage
             tokens_used = 0
@@ -113,16 +110,13 @@ class OpenRouterProvider(LLMProvider):
                 provider=self.name,
             )
 
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode() if e.fp else ""
-            logger.error(f"OpenRouter HTTP error {e.code}: {error_body}")
-            raise RuntimeError(f"OpenRouter API error: {e.code} - {error_body}")
-        except urllib.error.URLError as e:
-            logger.error(f"OpenRouter connection error: {e}")
-            raise RuntimeError(f"Failed to connect to OpenRouter: {e}")
-        except json.JSONDecodeError as e:
-            logger.error(f"OpenRouter response parse error: {e}")
-            raise RuntimeError(f"Invalid response from OpenRouter: {e}")
+        except LLMConnectionError:
+            raise
+        except LLMTimeoutError:
+            raise
+        except HTTPError as e:
+            logger.error(f"OpenRouter HTTP error: {e}")
+            raise LLMResponseError(f"OpenRouter API error: {e}") from e
         except Exception as e:
             logger.error(f"OpenRouter error: {e}")
             raise

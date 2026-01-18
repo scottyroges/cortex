@@ -8,17 +8,17 @@ When CORTEX_SUMMARIZER_URL is set (e.g., in Docker), uses an HTTP
 proxy on the host instead of calling the CLI directly.
 """
 
-import json
 import os
-import subprocess
 import shutil
+import subprocess
 import time
-import urllib.request
-import urllib.error
 from typing import Optional
 
-from .provider import LLMProvider, LLMConfig, LLMResponse
 from logging_config import get_logger
+from src.exceptions import LLMConnectionError, LLMResponseError, LLMTimeoutError
+from src.http.http_client import HTTPError, http_get, http_json_post
+
+from .provider import LLMConfig, LLMProvider, LLMResponse
 
 logger = get_logger("llm.claude_cli")
 
@@ -54,9 +54,8 @@ class ClaudeCLIProvider(LLMProvider):
         # If summarizer URL is set (Docker mode), check if proxy is reachable
         if SUMMARIZER_URL:
             try:
-                req = urllib.request.Request(f"{SUMMARIZER_URL}/health", method="GET")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    return resp.status == 200
+                response = http_get(f"{SUMMARIZER_URL}/health", timeout=5, raise_for_status=False)
+                return response.status_code == 200
             except Exception as e:
                 logger.debug(f"Summarizer proxy not available: {e}")
                 return False
@@ -98,25 +97,20 @@ class ClaudeCLIProvider(LLMProvider):
     ) -> LLMResponse:
         """Generate completion via the summarizer HTTP proxy."""
         try:
-            data = json.dumps({"transcript": prompt, "model": model}).encode()
-            req = urllib.request.Request(
+            result = http_json_post(
                 f"{SUMMARIZER_URL}/summarize",
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
+                json={"transcript": prompt, "model": model},
+                timeout=timeout,
             )
-
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                result = json.loads(resp.read().decode())
 
             latency_ms = (time.time() - start_time) * 1000
 
             if "error" in result:
-                raise RuntimeError(f"Summarizer proxy error: {result['error']}")
+                raise LLMResponseError(f"Summarizer proxy error: {result['error']}")
 
             summary = result.get("summary", "")
             if not summary:
-                raise RuntimeError("Summarizer proxy returned empty response")
+                raise LLMResponseError("Summarizer proxy returned empty response")
 
             return LLMResponse(
                 text=summary,
@@ -126,9 +120,17 @@ class ClaudeCLIProvider(LLMProvider):
                 provider=f"{self.name}+proxy",
             )
 
-        except urllib.error.URLError as e:
+        except LLMConnectionError as e:
             logger.error(f"Summarizer proxy connection error: {e}")
-            raise RuntimeError(f"Summarizer proxy not reachable: {e}")
+            raise
+        except LLMTimeoutError as e:
+            logger.error(f"Summarizer proxy timeout: {e}")
+            raise
+        except HTTPError as e:
+            logger.error(f"Summarizer proxy HTTP error: {e}")
+            raise LLMResponseError(f"Summarizer proxy error: {e}") from e
+        except LLMResponseError:
+            raise
         except Exception as e:
             logger.error(f"Summarizer proxy error: {e}")
             raise
@@ -139,7 +141,7 @@ class ClaudeCLIProvider(LLMProvider):
         """Generate completion using local Claude CLI."""
         if self._cli_path is None:
             if not self.is_available():
-                raise RuntimeError("Claude CLI not available")
+                raise LLMConnectionError("Claude CLI not available")
 
         try:
             # Build command
@@ -162,11 +164,11 @@ class ClaudeCLIProvider(LLMProvider):
 
             if result.returncode != 0:
                 error_msg = result.stderr.strip() or "Unknown error"
-                raise RuntimeError(f"Claude CLI failed: {error_msg}")
+                raise LLMResponseError(f"Claude CLI failed: {error_msg}")
 
             output = result.stdout.strip()
             if not output:
-                raise RuntimeError("Claude CLI returned empty response")
+                raise LLMResponseError("Claude CLI returned empty response")
 
             return LLMResponse(
                 text=output,
@@ -178,12 +180,14 @@ class ClaudeCLIProvider(LLMProvider):
 
         except subprocess.TimeoutExpired:
             logger.error(f"Claude CLI timed out after {timeout}s")
-            raise RuntimeError(f"Claude CLI timed out after {timeout}s")
+            raise LLMTimeoutError(f"Claude CLI timed out after {timeout}s")
         except FileNotFoundError:
             logger.error("Claude CLI not found")
-            raise RuntimeError(
+            raise LLMConnectionError(
                 "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
             )
+        except (LLMConnectionError, LLMTimeoutError, LLMResponseError):
+            raise
         except Exception as e:
             logger.error(f"Claude CLI error: {e}")
             raise

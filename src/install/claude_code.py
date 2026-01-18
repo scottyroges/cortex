@@ -11,12 +11,17 @@ from pathlib import Path
 from typing import Optional
 
 from logging_config import get_logger
+from src.config import get_timeout
 
 logger = get_logger("install.claude_code")
 
 # Hook configuration for Claude Code (new matcher-based format)
 # See: https://code.claude.com/docs/en/hooks
-CORTEX_HOOK_TIMEOUT = 15000  # 15 seconds for LLM summarization
+
+
+def get_hook_timeout() -> int:
+    """Get hook timeout in milliseconds from config."""
+    return int(get_timeout("hook_execution_ms", 15000))
 
 
 def get_claude_settings_path() -> Path:
@@ -200,7 +205,7 @@ def install_claude_code_hook(
             {
                 "type": "command",
                 "command": f"python3 {hook_script_str}",
-                "timeout": CORTEX_HOOK_TIMEOUT,
+                "timeout": get_hook_timeout(),
             }
         ],
     }

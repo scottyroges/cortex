@@ -9,20 +9,23 @@ import subprocess
 from typing import Optional
 
 from logging_config import get_logger
+from src.config import get_timeout
+from src.exceptions import GitCommandError
 
 logger = get_logger("git.subprocess")
 
 
-class GitCommandError(Exception):
-    """Raised when a git command fails unexpectedly."""
+# Re-export for backwards compatibility
+__all__ = ["GitCommandError", "run_git_command", "git_stdout", "git_stdout_or_none", "git_count_lines", "git_check"]
 
-    pass
+# Default timeout for git commands
+GIT_TIMEOUT = int(get_timeout("git_command", 10))
 
 
 def run_git_command(
     args: list[str],
     cwd: str,
-    timeout: int = 5,
+    timeout: int | None = None,
 ) -> tuple[int, str, str]:
     """
     Low-level wrapper around subprocess.run for git commands.
@@ -30,7 +33,7 @@ def run_git_command(
     Args:
         args: Git command arguments (without 'git' prefix)
         cwd: Working directory
-        timeout: Timeout in seconds
+        timeout: Timeout in seconds (defaults to config value)
 
     Returns:
         Tuple of (returncode, stdout, stderr)
@@ -38,6 +41,8 @@ def run_git_command(
     Raises:
         GitCommandError: On FileNotFoundError or TimeoutExpired
     """
+    if timeout is None:
+        timeout = GIT_TIMEOUT
     try:
         result = subprocess.run(
             ["git"] + args,
@@ -56,7 +61,7 @@ def run_git_command(
 def git_check(
     args: list[str],
     cwd: str,
-    timeout: int = 5,
+    timeout: int | None = None,
 ) -> bool:
     """
     Execute git command and check if successful (returncode == 0).

@@ -131,12 +131,17 @@ Cortex fills this gap by storing:
 
 *Surface understanding first, not code noise.*
 
+### Completed ✅
+
+| Feature | Description | Value |
+|---------|-------------|-------|
+| **Type-Based Scoring** | Boost insights (2x), notes (1.5x), commits (1.5x) over code chunks. Implemented in `src/search/type_scoring.py`. | Understanding surfaces before implementation |
+
 ### High Priority
 
 | Feature | Description | Value |
 |---------|-------------|-------|
-| **Type-Based Scoring** | Boost insights (2x), notes (1.5x), commits (1.5x) over code chunks. Implement in `src/tools/search.py`. | Understanding surfaces before implementation |
-| **Conditional Index Rebuild** | Don't rebuild BM25 index on every query. Cache index state, rebuild only when collection changes. | Performance: currently always rebuilds at `api.py:170` |
+| **Conditional Index Rebuild** | Don't rebuild BM25 index on every query. Cache index state, rebuild only when collection changes. | Performance optimization |
 | **Document Type Filter** | Add `types` parameter to `search_cortex`. Enable notes-only search for "why" questions. | Skip code noise entirely |
 | **Skeleton + Memory Mode** | Option to skip code indexing entirely. Index only skeleton + semantic memory. | 10-100x smaller index, higher signal |
 
@@ -149,50 +154,50 @@ Cortex fills this gap by storing:
 
 ---
 
-## Code Quality Initiative 🔄
+## Code Quality Initiative ✅
 
-*Address technical debt identified in Jan 2026 codebase analysis. See `initiative:0c2e3f0d`.*
+*Completed Jan 2026. Addressed technical debt from codebase analysis.*
 
-### Critical Fixes
+### Critical Fixes ✅
 
-| Issue | Location | Fix |
-|-------|----------|-----|
-| **Queue processor non-atomic writes** | `src/autocapture/queue_processor.py:105-106` | Use tempfile + rename pattern from `state.py` |
-| **Migration no rollback** | `src/migrations/runner.py:128-137` | Backup before each migration, restore on failure |
+| Issue | Solution | Status |
+|-------|----------|--------|
+| **Queue processor non-atomic writes** | Tempfile + rename pattern in `queue_processor.py` | ✅ Done |
+| **Migration no rollback** | Backup before each migration, restore on failure | ✅ Done |
 
-### Code Duplication Elimination
+### Code Duplication Elimination ✅
 
-| Duplication | Files Affected | Solution |
-|-------------|----------------|----------|
-| **Resource initialization** (~80 lines) | `api.py`, `browse.py` | Create `src/http/resources.py` with thread-safe ResourceManager |
-| **Subprocess patterns** (~40 lines) | `git/detection.py`, `git/delta.py` | Create `src/git/subprocess_utils.py` |
-| **Initiative resolution** (3x) | `notes.py` lines 71-89, 194-211, 366-380 | Extract `InitiativeResolver` class |
-| **`_find_initiative`** | `initiatives.py`, `recall.py` | Create `src/tools/initiative_utils.py` |
+| Duplication | Solution | Status |
+|-------------|----------|--------|
+| **Resource initialization** | `src/http/resources.py` with thread-safe ResourceManager | ✅ Done |
+| **Subprocess patterns** | `src/git/subprocess_utils.py` | ✅ Done |
+| **Initiative resolution** | `resolve_initiative()` in `src/tools/initiative_utils.py` | ✅ Done |
+| **`_find_initiative`** | `find_initiative()` in `src/tools/initiative_utils.py` | ✅ Done |
 
-### Function Complexity
+### Function Complexity ✅
 
-| Function | Lines | Target |
-|----------|-------|--------|
-| `search_cortex` | 279 | Extract `SearchPipeline` class |
-| `ingest_codebase` | 206 | Strategy pattern for delta sync |
-| `orient_session` | 177 | Extract `RepositoryContext` class |
-| `parse_transcript_jsonl` | ~100 | Extract block parsing helpers |
+| Function | Solution | Status |
+|----------|----------|--------|
+| `search_cortex` | Extracted `SearchPipeline` dataclass | ✅ Done |
+| `ingest_codebase` | Strategy pattern (`DeltaSyncStrategy`) | ✅ Done |
+| `orient_session` | Extracted `RepositoryContext`, `StalenessDetector` | ✅ Done |
+| `parse_transcript_jsonl` | Extracted `ContentBlockParser`, `TranscriptMetadataExtractor` | ✅ Done |
 
-### Test Coverage Expansion
+### Test Coverage Expansion ✅
 
-| Module | Current | Target |
-|--------|---------|--------|
-| Auto-capture | ~5 tests | ~25 tests (transcript parsing, LLM fallback, hook resilience) |
-| Performance | 0 tests | Latency benchmarks, large codebase tests |
-| E2E workflow | 0 tests | Orient → Ingest → Search → Commit flow |
+| Module | Status | Details |
+|--------|--------|---------|
+| Auto-capture | ✅ Done | 62+ tests in `test_autocapture.py` |
+| Performance | ✅ Done | 8 benchmarks in `test_benchmarks.py` (latency, throughput, large codebase) |
+| E2E workflow | ✅ Done | 9 tests in `test_e2e.py` (orient→ingest→search→commit, initiatives) |
 
-### Lower Priority
+### Lower Priority Items ✅
 
-| Item | Description |
-|------|-------------|
-| **Exception hierarchy** | Create `src/exceptions.py` with `CortexError` base class |
-| **HTTP client standardization** | Migrate urllib to requests/httpx across all providers |
-| **Configuration extraction** | Move hardcoded values (timeouts, thresholds) to config.yaml |
+| Item | Solution | Status |
+|------|----------|--------|
+| **Exception hierarchy** | `src/exceptions.py` with `CortexError` base + domain-specific exceptions | ✅ Done |
+| **HTTP client standardization** | `src/http/http_client.py` replacing urllib in LLM providers | ✅ Done |
+| **Configuration extraction** | `TIMEOUTS` dict in `src/config.py` with `get_timeout()` helper | ✅ Done |
 
 ---
 

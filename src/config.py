@@ -189,6 +189,22 @@ def load_ignore_patterns(root_path: str, use_cortexignore: bool = True) -> set[s
     return patterns
 
 
+def get_timeout(key: str, default: int | float | None = None) -> int | float:
+    """
+    Get a timeout value by key.
+
+    Args:
+        key: Timeout key from TIMEOUTS dict
+        default: Default value if key not found
+
+    Returns:
+        Timeout value in seconds (or milliseconds for hook_execution_ms)
+    """
+    if default is None:
+        default = TIMEOUTS.get("http_default", 10)
+    return TIMEOUTS.get(key, default)
+
+
 # --- Binary Extensions ---
 
 BINARY_EXTENSIONS = {
@@ -256,6 +272,28 @@ def get_default_header_provider() -> str:
     return "none"
 
 
+# --- Timeout Configuration ---
+# Centralized timeout values (in seconds unless noted)
+
+TIMEOUTS = {
+    # Git operations
+    "git_command": 10,         # Default git command timeout
+    "git_diff": 30,            # Git diff for large repos
+    # HTTP requests
+    "http_default": 10,        # Default HTTP request timeout
+    "http_health_check": 5,    # Health check endpoints
+    "http_llm_request": 120,   # LLM API requests (can be slow)
+    # LLM providers
+    "llm_availability_check": 5,   # Provider availability check
+    # Ingest operations
+    "ingest_headers": 30,      # Header provider timeout
+    "ingest_skeleton": 10,     # Skeleton generation
+    # Summarization
+    "summarize_session": 60,   # Session summarization
+    # Hook execution (milliseconds)
+    "hook_execution_ms": 15000,  # Claude Code hook timeout
+}
+
 # Default runtime config (mutable at runtime)
 DEFAULT_CONFIG = {
     "min_score": 0.5,
@@ -282,6 +320,8 @@ DEFAULT_CONFIG = {
     "staleness_check_limit": 10,  # Only check top N results for staleness
     "staleness_time_threshold_days": 30,
     "staleness_very_stale_threshold_days": 90,
+    # Timeouts (can be overridden)
+    "timeouts": TIMEOUTS,
 }
 
 

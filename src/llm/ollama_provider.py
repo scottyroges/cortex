@@ -7,12 +7,12 @@ No API key required - runs entirely locally.
 
 import time
 from typing import Optional
-import urllib.request
-import urllib.error
-import json
 
-from .provider import LLMProvider, LLMConfig, LLMResponse
 from logging_config import get_logger
+from src.exceptions import LLMConnectionError, LLMResponseError, LLMTimeoutError
+from src.http.http_client import HTTPError, http_json_get, http_json_post
+
+from .provider import LLMConfig, LLMProvider, LLMResponse
 
 logger = get_logger("llm.ollama")
 
@@ -44,22 +44,13 @@ class OllamaProvider(LLMProvider):
     def is_available(self) -> bool:
         """Check if Ollama server is running and accessible."""
         try:
-            # Check if server is running
-            req = urllib.request.Request(
-                f"{self._base_url}/api/tags",
-                method="GET",
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                if response.status == 200:
-                    # Check if we have any models
-                    data = json.loads(response.read().decode())
-                    models = data.get("models", [])
-                    if models:
-                        return True
-                    logger.debug("Ollama running but no models installed")
-                    return False
+            data = http_json_get(f"{self._base_url}/api/tags", timeout=5)
+            models = data.get("models", [])
+            if models:
+                return True
+            logger.debug("Ollama running but no models installed")
             return False
-        except urllib.error.URLError as e:
+        except (LLMConnectionError, LLMTimeoutError) as e:
             logger.debug(f"Ollama not reachable: {e}")
             return False
         except Exception as e:
@@ -74,7 +65,6 @@ class OllamaProvider(LLMProvider):
         start_time = time.time()
 
         try:
-            # Build request
             payload = {
                 "model": model,
                 "prompt": prompt,
@@ -85,21 +75,17 @@ class OllamaProvider(LLMProvider):
                 },
             }
 
-            req = urllib.request.Request(
+            data = http_json_post(
                 f"{self._base_url}/api/generate",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+                json=payload,
+                timeout=config.timeout,
             )
-
-            with urllib.request.urlopen(req, timeout=config.timeout) as response:
-                data = json.loads(response.read().decode())
 
             latency_ms = (time.time() - start_time) * 1000
 
             text = data.get("response", "")
             if not text:
-                raise RuntimeError("Ollama returned empty response")
+                raise LLMResponseError("Ollama returned empty response")
 
             # Extract token counts if available
             tokens_used = 0
@@ -114,12 +100,15 @@ class OllamaProvider(LLMProvider):
                 provider=self.name,
             )
 
-        except urllib.error.URLError as e:
+        except LLMConnectionError as e:
             logger.error(f"Ollama connection error: {e}")
-            raise RuntimeError(f"Failed to connect to Ollama: {e}")
-        except json.JSONDecodeError as e:
-            logger.error(f"Ollama response parse error: {e}")
-            raise RuntimeError(f"Invalid response from Ollama: {e}")
+            raise
+        except LLMTimeoutError as e:
+            logger.error(f"Ollama timeout: {e}")
+            raise
+        except HTTPError as e:
+            logger.error(f"Ollama HTTP error: {e}")
+            raise LLMResponseError(f"Ollama API error: {e}") from e
         except Exception as e:
             logger.error(f"Ollama error: {e}")
             raise
