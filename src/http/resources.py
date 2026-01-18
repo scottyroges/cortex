@@ -5,7 +5,7 @@ Thread-safe lazy initialization of shared resources for HTTP endpoints.
 Consolidates resource management from api.py and browse.py.
 """
 
-from threading import Lock
+from threading import RLock
 from typing import Optional
 
 from src.search import HybridSearcher, RerankerService
@@ -21,7 +21,7 @@ class ResourceManager:
     """
 
     _instance: Optional["ResourceManager"] = None
-    _lock = Lock()
+    _lock = RLock()
 
     def __new__(cls) -> "ResourceManager":
         if cls._instance is None:
@@ -39,7 +39,7 @@ class ResourceManager:
         self._collection = None
         self._searcher = None
         self._reranker = None
-        self._resource_lock = Lock()
+        self._resource_lock = RLock()
         self._initialized = True
 
     @property

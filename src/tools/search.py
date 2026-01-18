@@ -11,7 +11,7 @@ from typing import Optional
 
 from logging_config import get_logger
 from src.git import get_current_branch
-from src.search import apply_recency_boost
+from src.search import apply_recency_boost, apply_type_boost
 from src.tools.services import CONFIG, get_collection, get_reranker, get_repo_path, get_searcher
 from src.tools.staleness import check_insight_staleness, check_note_staleness, format_verification_warning
 
@@ -265,7 +265,7 @@ class SearchPipeline:
         return candidates
 
     def _apply_ranking(self, reranker, candidates: list) -> list:
-        """Apply reranking, recency boost, initiative filtering/boosting, and score filtering."""
+        """Apply reranking, type boost, recency boost, initiative filtering/boosting, and score filtering."""
         # Rerank with FlashRank
         rerank_start = time.time()
         ranked = reranker.rerank(
@@ -275,6 +275,12 @@ class SearchPipeline:
         )
         rerank_time = time.time() - rerank_start
         logger.debug(f"Reranking: {len(ranked)} results in {rerank_time*1000:.1f}ms")
+
+        # Apply type-based scoring (insights 2x, notes/commits 1.5x, code 1x)
+        if CONFIG.get("type_boost", True):
+            type_multipliers = CONFIG.get("type_multipliers")
+            ranked = apply_type_boost(ranked, multipliers=type_multipliers)
+            logger.debug("Type boost applied (insight=2x, note/commit=1.5x)")
 
         # Apply recency boost to notes/commits (not code)
         if CONFIG["recency_boost"]:
@@ -370,6 +376,8 @@ class SearchPipeline:
             result["initiative_name"] = meta.get("initiative_name", "")
 
         if CONFIG["verbose"]:
+            if "type_boost" in r:
+                result["type_boost"] = r["type_boost"]
             if "recency_boost" in r:
                 result["recency_boost"] = r["recency_boost"]
             if "initiative_boost" in r:

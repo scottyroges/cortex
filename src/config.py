@@ -266,6 +266,17 @@ DEFAULT_CONFIG = {
     "header_provider": get_default_header_provider(),
     "recency_boost": True,
     "recency_half_life_days": 30.0,
+    # Type-based scoring (prioritize understanding over code)
+    "type_boost": True,
+    "type_multipliers": {
+        "insight": 2.0,
+        "note": 1.5,
+        "commit": 1.5,
+        "code": 1.0,
+        "skeleton": 1.0,
+        "tech_stack": 1.2,
+        "initiative": 1.0,
+    },
     # Staleness detection
     "staleness_check_enabled": True,
     "staleness_check_limit": 10,  # Only check top N results for staleness
