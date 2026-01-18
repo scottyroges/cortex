@@ -396,6 +396,44 @@ MCP_TOOL_SCHEMAS = [
             "required": ["insight_id", "validation_result"],
         },
     },
+    {
+        "name": "get_autocapture_status",
+        "description": "Get status of the auto-capture system including hook installation, LLM provider availability, configuration, and recent capture statistics.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "configure_autocapture",
+        "description": "Configure auto-capture settings. Changes are persisted to ~/.cortex/config.yaml.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable or disable auto-capture",
+                },
+                "llm_provider": {
+                    "type": "string",
+                    "enum": ["anthropic", "ollama", "openrouter", "claude-cli"],
+                    "description": "Primary LLM provider for summarization",
+                },
+                "min_tokens": {
+                    "type": "integer",
+                    "description": "Minimum token threshold for significant sessions",
+                },
+                "min_file_edits": {
+                    "type": "integer",
+                    "description": "Minimum file edit threshold for significant sessions",
+                },
+                "min_tool_calls": {
+                    "type": "integer",
+                    "description": "Minimum tool call threshold for significant sessions",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -422,6 +460,10 @@ def _get_tool_map():
         summarize_initiative,
         validate_insight,
     )
+    from src.tools.autocapture import (
+        get_autocapture_status,
+        configure_autocapture,
+    )
     return {
         "orient_session": orient_session,
         "search_cortex": search_cortex,
@@ -442,6 +484,8 @@ def _get_tool_map():
         "recall_recent_work": recall_recent_work,
         "summarize_initiative": summarize_initiative,
         "validate_insight": validate_insight,
+        "get_autocapture_status": get_autocapture_status,
+        "configure_autocapture": configure_autocapture,
     }
 
 

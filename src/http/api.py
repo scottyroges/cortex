@@ -75,6 +75,14 @@ class NoteRequest(BaseModel):
     repository: str = "notes"
 
 
+class CommitRequest(BaseModel):
+    """Request body for session commit (from auto-capture hook)."""
+    summary: str
+    changed_files: list[str] = []
+    repository: str = "global"
+    initiative: Optional[str] = None
+
+
 class SearchResponse(BaseModel):
     """Response for search endpoint."""
     query: str
@@ -305,4 +313,120 @@ def get_backups() -> dict[str, Any]:
 
     return {
         "backups": list_backups(),
+    }
+
+
+# --- Auto-Capture Endpoints ---
+
+
+@router.post("/commit")
+def commit_session(request: CommitRequest) -> dict[str, Any]:
+    """
+    Commit a session summary to Cortex memory.
+
+    Used by the auto-capture hook to save session summaries.
+    This is a simplified version of commit_to_cortex MCP tool.
+
+    Args:
+        summary: Session summary text
+        changed_files: List of files edited in the session
+        repository: Repository name (default: "global")
+        initiative: Optional initiative to tag
+    """
+    from datetime import timezone
+
+    logger.info(f"Commit session: repository={request.repository}, files={len(request.changed_files)}")
+
+    # Scrub secrets from summary
+    clean_summary = scrub_secrets(request.summary)
+
+    # Generate document ID
+    doc_id = f"commit:{uuid.uuid4().hex[:8]}"
+
+    # Build document content
+    content = f"Session Summary:\n\n{clean_summary}"
+    if request.changed_files:
+        content += f"\n\nChanged files: {', '.join(request.changed_files)}"
+
+    # Build metadata
+    metadata = {
+        "type": "commit",
+        "repository": request.repository,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "active",
+        "source": "auto-capture",
+    }
+
+    if request.changed_files:
+        import json
+        metadata["files"] = json.dumps(request.changed_files)
+
+    if request.initiative:
+        metadata["initiative_name"] = request.initiative
+
+    # Add to collection
+    collection = get_collection()
+    collection.add(
+        documents=[content],
+        ids=[doc_id],
+        metadatas=[metadata],
+    )
+
+    # Rebuild search index
+    try:
+        searcher = get_searcher()
+        searcher.build_index()
+    except Exception as e:
+        logger.warning(f"Failed to rebuild search index: {e}")
+
+    logger.info(f"Committed session: id={doc_id}")
+
+    return {
+        "status": "success",
+        "commit_id": doc_id,
+        "summary_length": len(clean_summary),
+        "files_count": len(request.changed_files),
+    }
+
+
+@router.get("/autocapture/status")
+def autocapture_status() -> dict[str, Any]:
+    """
+    Get auto-capture system status.
+
+    Returns configuration, hook status, and recent captures.
+    """
+    from pathlib import Path
+
+    cortex_data = Path.home() / ".cortex"
+
+    # Check hook installation
+    hook_script = cortex_data / "hooks" / "claude_session_end.py"
+    hook_log = cortex_data / "hook.log"
+    captured_sessions = cortex_data / "captured_sessions.json"
+
+    # Count recent captures
+    recent_captures = 0
+    if captured_sessions.exists():
+        try:
+            import json
+            data = json.loads(captured_sessions.read_text())
+            recent_captures = len(data.get("captured", []))
+        except Exception:
+            pass
+
+    # Get last log entries
+    last_logs = []
+    if hook_log.exists():
+        try:
+            lines = hook_log.read_text().strip().split("\n")
+            last_logs = lines[-5:]  # Last 5 log entries
+        except Exception:
+            pass
+
+    return {
+        "hook_script_installed": hook_script.exists(),
+        "hook_script_path": str(hook_script),
+        "captured_sessions_count": recent_captures,
+        "last_hook_logs": last_logs,
     }

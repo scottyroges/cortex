@@ -2,6 +2,9 @@
 Contextual Header Generation
 
 Generate descriptive headers for code chunks using various providers.
+
+This module provides backward-compatible functions for header generation
+and also integrates with the new LLM provider abstraction.
 """
 
 import subprocess
@@ -14,6 +17,24 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from logging_config import get_logger
 
 logger = get_logger("ingest.headers")
+
+# Singleton for LLM provider (lazy initialized)
+_llm_provider = None
+
+
+def get_llm_provider():
+    """Get or create the LLM provider singleton."""
+    global _llm_provider
+    if _llm_provider is None:
+        try:
+            from src.llm import get_provider
+
+            _llm_provider = get_provider()
+        except Exception as e:
+            logger.debug(f"Failed to initialize LLM provider: {e}")
+            _llm_provider = None
+    return _llm_provider
+
 
 # Header prompt template used by all providers
 HEADER_PROMPT_TEMPLATE = """Analyze this {language} code chunk from {file_path} and provide a brief (1-2 sentence) description of what it does. Focus on the purpose and key functionality.
@@ -100,13 +121,46 @@ def generate_header_with_claude_cli(
         logger.warning(f"Claude CLI error: {result.stderr}")
         return f"Code snippet from {file_path}"
     except FileNotFoundError:
-        logger.warning("Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-cli")
+        logger.warning(
+            "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
+        )
         return f"Code snippet from {file_path}"
     except subprocess.TimeoutExpired:
         logger.warning("Claude CLI timed out")
         return f"Code snippet from {file_path}"
     except Exception as e:
         logger.warning(f"Claude CLI error: {e}")
+        return f"Code snippet from {file_path}"
+
+
+def generate_header_with_provider(
+    chunk: str,
+    file_path: str,
+    language: str,
+) -> str:
+    """
+    Generate a contextual header using the unified LLM provider abstraction.
+
+    This function uses the configured LLM provider (with fallback chain)
+    to generate code headers. Falls back to simple headers if no provider
+    is available.
+
+    Args:
+        chunk: Code chunk to describe
+        file_path: Path to the source file
+        language: Programming language name
+
+    Returns:
+        Generated description or simple fallback
+    """
+    provider = get_llm_provider()
+    if provider is None:
+        return f"Code from {file_path}"
+
+    try:
+        return provider.generate_code_header(chunk, file_path, language)
+    except Exception as e:
+        logger.warning(f"LLM provider error: {e}")
         return f"Code snippet from {file_path}"
 
 
@@ -125,7 +179,8 @@ def generate_header_sync(
         file_path: Path to the source file
         language: Detected language
         anthropic_client: Anthropic client (for "anthropic" provider)
-        header_provider: One of "anthropic", "claude-cli", or "none"
+        header_provider: One of "anthropic", "claude-cli", "auto", or "none"
+            - "auto": Use the unified LLM provider abstraction
 
     Returns:
         Generated or simple header text
@@ -136,6 +191,8 @@ def generate_header_sync(
         return generate_header_with_anthropic(chunk, file_path, lang_str, anthropic_client)
     elif header_provider == "claude-cli":
         return generate_header_with_claude_cli(chunk, file_path, lang_str)
+    elif header_provider == "auto":
+        return generate_header_with_provider(chunk, file_path, lang_str)
 
     # Simple fallback header
     return f"Code from {file_path}"

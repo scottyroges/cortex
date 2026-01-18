@@ -455,7 +455,13 @@ with open('$SETTINGS_FILE', 'w') as f:
         echo "  cortex daemon restart"
     fi
 
+    # Install hooks for auto-capture
     echo ""
+    echo "Installing auto-capture hooks..."
+    echo ""
+    hooks_install
+    echo ""
+
     echo "Next steps:"
     echo "  1. Start the Cortex daemon:"
     echo "     cortex daemon start"
@@ -681,6 +687,11 @@ version = data.get('current_version', 'unknown')
 print(f'  Schema version: v{version}')
 " 2>/dev/null
         fi
+
+        # Step 8: Update hooks
+        echo ""
+        echo "Updating hooks..."
+        hooks_repair >/dev/null 2>&1 && echo "  Hooks updated" || echo "  Hook update skipped (run 'cortex hooks repair' if needed)"
     else
         log_error "Daemon failed to start after update"
         echo ""
@@ -690,6 +701,184 @@ print(f'  Schema version: v{version}')
         echo "  3. Run: cortex daemon start"
         return 1
     fi
+}
+
+# --- Hooks Command ---
+
+hooks_install() {
+    local force=""
+    if [ "${1:-}" = "--force" ] || [ "${1:-}" = "-f" ]; then
+        force="force=True"
+    fi
+
+    echo "Installing Cortex hooks..."
+    echo ""
+
+    python3 -c "
+import sys
+sys.path.insert(0, '$CORTEX_SRC_DIR')
+from pathlib import Path
+try:
+    from src.install import install_hooks
+    success, messages = install_hooks(
+        claude_code=True,
+        source_dir=Path('$CORTEX_SRC_DIR'),
+        $force
+    )
+    for msg in messages:
+        print(f'  {msg}')
+    sys.exit(0 if success else 1)
+except ImportError as e:
+    print(f'Error: Could not load install module: {e}')
+    print('Make sure you are running from the Cortex source directory.')
+    sys.exit(1)
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+"
+    local result=$?
+
+    echo ""
+    if [ $result -eq 0 ]; then
+        echo "Hook installation complete."
+        echo ""
+        echo "Auto-capture is now enabled. Sessions will be automatically"
+        echo "saved to Cortex when you exit Claude Code."
+    else
+        echo "Hook installation had issues. Run 'cortex hooks status' for details."
+    fi
+
+    return $result
+}
+
+hooks_status() {
+    echo "Cortex Hook Status"
+    echo "=================="
+    echo ""
+
+    python3 -c "
+import sys
+sys.path.insert(0, '$CORTEX_SRC_DIR')
+try:
+    from src.install import get_hook_status
+
+    status = get_hook_status()
+
+    # Claude Code status
+    print('Claude Code:')
+    if status.claude_code_available:
+        print('  CLI: installed')
+    else:
+        print('  CLI: not found')
+
+    if status.hook_script_exists:
+        details = status.details.get('claude_code', {})
+        script_path = details.get('hook_script_path', '~/.cortex/hooks/claude_session_end.py')
+        print(f'  Hook script: {script_path}')
+    else:
+        print('  Hook script: not installed')
+
+    if status.claude_code_installed:
+        print('  Registered: yes (in ~/.claude/settings.json)')
+    else:
+        print('  Registered: no')
+
+    print('')
+
+    # Overall status
+    if status.any_installed:
+        print('Status: Auto-capture is ENABLED')
+    elif status.claude_code_available:
+        print('Status: Auto-capture NOT enabled')
+        print('')
+        print('Run \\'cortex hooks install\\' to enable auto-capture.')
+    else:
+        print('Status: Claude Code CLI not found')
+        print('')
+        print('Install Claude Code first, then run \\'cortex hooks install\\'.')
+
+    if status.errors:
+        print('')
+        print('Errors:')
+        for err in status.errors:
+            print(f'  - {err}')
+
+except ImportError as e:
+    print(f'Error: Could not load install module: {e}')
+    sys.exit(1)
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+"
+}
+
+hooks_repair() {
+    echo "Repairing Cortex hooks..."
+    echo ""
+
+    python3 -c "
+import sys
+sys.path.insert(0, '$CORTEX_SRC_DIR')
+from pathlib import Path
+try:
+    from src.install import repair_hooks, copy_hook_scripts
+
+    # First, refresh hook scripts from source
+    success, msg = copy_hook_scripts(Path('$CORTEX_SRC_DIR'))
+    print(f'Script refresh: {msg}')
+
+    # Then reinstall/re-register
+    success, messages = repair_hooks()
+    for msg in messages:
+        print(f'  {msg}')
+    sys.exit(0 if success else 1)
+except ImportError as e:
+    print(f'Error: Could not load install module: {e}')
+    sys.exit(1)
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+"
+    local result=$?
+
+    echo ""
+    if [ $result -eq 0 ]; then
+        echo "Hook repair complete."
+    else
+        echo "Hook repair failed."
+    fi
+
+    return $result
+}
+
+hooks_uninstall() {
+    echo "Uninstalling Cortex hooks..."
+    echo ""
+
+    python3 -c "
+import sys
+sys.path.insert(0, '$CORTEX_SRC_DIR')
+try:
+    from src.install.hooks import uninstall_hooks
+    success, messages = uninstall_hooks(claude_code=True)
+    for msg in messages:
+        print(f'  {msg}')
+    sys.exit(0 if success else 1)
+except ImportError as e:
+    print(f'Error: Could not load install module: {e}')
+    sys.exit(1)
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+"
+    local result=$?
+
+    echo ""
+    if [ $result -eq 0 ]; then
+        echo "Hooks uninstalled. Auto-capture is now disabled."
+    fi
+
+    return $result
 }
 
 # --- Doctor Command ---
@@ -875,6 +1064,25 @@ else:
         echo "  Run 'cortex update' to sync"
     fi
 
+    # Check 12: Auto-capture hooks
+    echo -n "Auto-capture hooks: "
+    python3 -c "
+import sys
+sys.path.insert(0, '$CORTEX_SRC_DIR')
+try:
+    from src.install import get_hook_status
+    status = get_hook_status()
+    if status.claude_code_installed:
+        print('OK (Claude Code hook installed)')
+    elif status.claude_code_available:
+        print('NOT INSTALLED')
+        print('  Run \"cortex hooks install\" to enable auto-capture')
+    else:
+        print('SKIP (Claude CLI not found)')
+except Exception as e:
+    print(f'ERROR ({e})')
+" 2>/dev/null || echo "UNKNOWN"
+
     echo ""
     return $essential_status
 }
@@ -1052,6 +1260,10 @@ COMMANDS:
     init                Interactive setup, creates ~/.cortex/settings.json
     config              Show current configuration
     config edit         Open settings.json in $EDITOR
+    hooks install       Install auto-capture hooks (add -f to force reinstall)
+    hooks status        Show hook installation status
+    hooks repair        Reinstall hooks from latest source
+    hooks uninstall     Remove hooks and disable auto-capture
     daemon start        Start the daemon container
     daemon stop         Stop the daemon container
     daemon restart      Restart the daemon (rebuilds image)
@@ -1184,6 +1396,32 @@ case "${1:-}" in
         ;;
     update)
         do_update
+        ;;
+    hooks)
+        case "${2:-status}" in
+            install)
+                hooks_install "${3:-}"
+                ;;
+            status)
+                hooks_status
+                ;;
+            repair)
+                hooks_repair
+                ;;
+            uninstall)
+                hooks_uninstall
+                ;;
+            *)
+                echo "Usage: cortex hooks {install|status|repair|uninstall}" >&2
+                echo "" >&2
+                echo "Commands:" >&2
+                echo "  install    Install hooks for auto-capture (add -f to force reinstall)" >&2
+                echo "  status     Show current hook installation status" >&2
+                echo "  repair     Reinstall hooks from latest source" >&2
+                echo "  uninstall  Remove hooks and disable auto-capture" >&2
+                exit 1
+                ;;
+        esac
         ;;
     doctor)
         if [ "${2:-}" = "--verbose" ] || [ "${2:-}" = "-v" ]; then
