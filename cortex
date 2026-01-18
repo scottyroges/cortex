@@ -845,6 +845,7 @@ try:
     from src.install import get_hook_status
 
     status = get_hook_status()
+    details = status.details.get('claude_code', {})
 
     # Claude Code status
     print('Claude Code:')
@@ -853,40 +854,39 @@ try:
     else:
         print('  CLI: not found')
 
+    # SessionEnd hook
+    print('')
+    print('  SessionEnd (auto-capture):')
     if status.hook_script_exists:
-        details = status.details.get('claude_code', {})
         script_path = details.get('hook_script_path', '~/.cortex/hooks/claude_session_end.py')
-        print(f'  Hook script: {script_path}')
+        print(f'    Script: {script_path}')
     else:
-        print('  Hook script: not installed')
+        print('    Script: not installed')
 
     if status.claude_code_installed:
-        details = status.details.get('claude_code', {})
-        hook_format = details.get('hook_format')
         needs_migration = details.get('needs_migration', False)
         if needs_migration:
-            print('  Registered: yes (OLD FORMAT - needs migration)')
+            print('    Registered: yes (OLD FORMAT - needs migration)')
         else:
-            print('  Registered: yes (in ~/.claude/settings.json)')
+            print('    Registered: yes')
     else:
-        print('  Registered: no')
+        print('    Registered: no')
 
     print('')
 
     # Overall status
-    details = status.details.get('claude_code', {})
     needs_migration = details.get('needs_migration', False)
 
     if needs_migration:
-        print('Status: Auto-capture ENABLED but using deprecated hook format')
+        print('Status: Hooks ENABLED but using deprecated format')
         print('')
         print('Run \\'cortex hooks repair\\' to migrate to the new format.')
     elif status.any_installed:
-        print('Status: Auto-capture is ENABLED')
+        print('Status: Hooks ENABLED (SessionEnd)')
     elif status.claude_code_available:
-        print('Status: Auto-capture NOT enabled')
+        print('Status: Hooks NOT enabled')
         print('')
-        print('Run \\'cortex hooks install\\' to enable auto-capture.')
+        print('Run \\'cortex hooks install\\' to enable hooks.')
     else:
         print('Status: Claude Code CLI not found')
         print('')

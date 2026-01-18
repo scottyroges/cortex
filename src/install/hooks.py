@@ -42,7 +42,7 @@ class HookStatus:
         """Human-readable status summary."""
         parts = []
         if self.claude_code_installed:
-            parts.append("Claude Code: installed")
+            parts.append("Claude Code: installed (SessionEnd)")
         elif self.claude_code_available:
             parts.append("Claude Code: available but not installed")
         else:

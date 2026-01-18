@@ -30,7 +30,7 @@ def get_cortex_hooks_dir() -> Path:
 
 
 def get_hook_script_path() -> Path:
-    """Get the path where the hook script should be installed."""
+    """Get the path where the session end hook script should be installed."""
     return get_cortex_hooks_dir() / "claude_session_end.py"
 
 
@@ -85,12 +85,12 @@ def save_claude_settings(settings: dict) -> bool:
 
 def is_claude_code_hook_installed() -> bool:
     """
-    Check if the Cortex hook is already installed in Claude Code.
+    Check if Cortex SessionEnd hook is installed in Claude Code.
 
     Detects both old format (deprecated) and new matcher-based format.
 
     Returns:
-        True if hook is registered in settings.json
+        True if at least SessionEnd hook is registered in settings.json
     """
     settings = load_claude_settings()
     hooks = settings.get("hooks", {})
@@ -137,11 +137,11 @@ def install_claude_code_hook(
     force: bool = False,
 ) -> tuple[bool, str]:
     """
-    Install the Cortex SessionEnd hook for Claude Code.
+    Install Cortex SessionEnd hook for Claude Code.
 
     This function:
-    1. Copies the hook script to ~/.cortex/hooks/
-    2. Registers the hook in ~/.claude/settings.json
+    1. Copies hook script to ~/.cortex/hooks/
+    2. Registers hook in ~/.claude/settings.json
 
     Args:
         source_script: Path to the hook script source (uses bundled if None)
@@ -158,7 +158,7 @@ def install_claude_code_hook(
     hooks_dir = get_cortex_hooks_dir()
     hooks_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy hook script
+    # Copy SessionEnd hook script
     target_script = get_hook_script_path()
 
     if source_script and source_script.exists():
@@ -191,9 +191,11 @@ def install_claude_code_hook(
     # Check for old format hooks and migrate them
     old_hooks_removed = _migrate_old_format_hooks(settings, hook_script_str)
 
-    # Build our hook config (SessionEnd doesn't use matchers)
+    settings_changed = old_hooks_removed
+
+    # Build SessionEnd hook config
     # See: https://code.claude.com/docs/en/hooks
-    cortex_hook = {
+    session_end_hook = {
         "hooks": [
             {
                 "type": "command",
@@ -203,22 +205,23 @@ def install_claude_code_hook(
         ],
     }
 
-    # Check if we're already registered in new format
-    already_registered = any(
+    # Check if SessionEnd is already registered
+    session_end_registered = any(
         _is_new_format_hook(entry, hook_script_str)
         for entry in settings["hooks"]["SessionEnd"]
     )
 
-    if not already_registered:
-        settings["hooks"]["SessionEnd"].append(cortex_hook)
+    if not session_end_registered:
+        settings["hooks"]["SessionEnd"].append(session_end_hook)
+        settings_changed = True
 
-    if not already_registered or old_hooks_removed:
+    if settings_changed:
         if not save_claude_settings(settings):
             return False, "Failed to update Claude settings"
 
-    msg = f"Hook installed at {target_script}"
+    msg = "Hook installed (SessionEnd)"
     if old_hooks_removed:
-        msg += " (migrated from old format)"
+        msg += " - migrated from old format"
     return True, msg
 
 
@@ -266,7 +269,7 @@ def _migrate_old_format_hooks(settings: dict, hook_script_str: str) -> bool:
 
 def uninstall_claude_code_hook() -> tuple[bool, str]:
     """
-    Remove the Cortex hook from Claude Code.
+    Remove Cortex SessionEnd hook from Claude Code.
 
     Handles both old format and new matcher-based format.
 
@@ -276,29 +279,33 @@ def uninstall_claude_code_hook() -> tuple[bool, str]:
     # Remove from settings
     settings = load_claude_settings()
     hooks = settings.get("hooks", {})
-    session_end_hooks = hooks.get("SessionEnd", [])
+    settings_changed = False
 
+    # Remove SessionEnd hooks
+    session_end_hooks = hooks.get("SessionEnd", [])
     hook_script_str = str(get_hook_script_path())
 
-    # Filter out our hook (both old and new formats)
-    new_hooks = [
+    new_session_end = [
         entry for entry in session_end_hooks
         if not _is_old_format_hook(entry, hook_script_str)
         and not _is_new_format_hook(entry, hook_script_str)
     ]
 
-    if len(new_hooks) != len(session_end_hooks):
-        settings["hooks"]["SessionEnd"] = new_hooks
+    if len(new_session_end) != len(session_end_hooks):
+        settings["hooks"]["SessionEnd"] = new_session_end
+        settings_changed = True
+
+    if settings_changed:
         if not save_claude_settings(settings):
             return False, "Failed to update Claude settings"
 
-    # Optionally remove hook script
+    # Remove hook script
     hook_script = get_hook_script_path()
     if hook_script.exists():
         try:
             hook_script.unlink()
         except IOError as e:
-            logger.warning(f"Failed to remove hook script: {e}")
+            logger.warning(f"Failed to remove hook script {hook_script}: {e}")
 
     return True, "Hook uninstalled"
 
