@@ -447,6 +447,80 @@ insight_to_cortex(
 
 ---
 
+## Scenario 20: Auto-Capture Session Summary
+
+**Context:** User ends a Claude Code session after doing significant work.
+
+**Problem:** Manual `commit_to_cortex` requires discipline and is often forgotten.
+
+**How Auto-Capture Works:**
+1. Claude Code triggers `SessionEnd` hook when session closes
+2. Hook parses transcript, checks significance thresholds
+3. If significant, queues session for processing (<100ms, non-blocking)
+4. Daemon's background worker generates LLM summary
+5. Summary saved to Cortex memory automatically
+
+**No tools needed** - happens automatically via Claude Code hooks.
+
+**Configuration:**
+```yaml
+# ~/.cortex/config.yaml
+autocapture:
+  enabled: true
+  significance:
+    min_tokens: 1000
+    min_file_edits: 1
+    min_tool_calls: 3
+```
+
+---
+
+## Scenario 21: Checking Auto-Capture Status
+
+**Context:** User wants to verify auto-capture is working.
+
+**Flow:**
+1. `get_autocapture_status` - Returns hook status, LLM providers, and capture stats
+
+**Example Response:**
+```json
+{
+  "status": "ok",
+  "hooks": {
+    "claude_code_installed": true,
+    "hook_script_exists": true
+  },
+  "llm_providers": {
+    "available": ["claude-cli"],
+    "configured_primary": "claude-cli"
+  },
+  "statistics": {
+    "captured_sessions_count": 15
+  }
+}
+```
+
+**Tools Used:** `get_autocapture_status`
+
+---
+
+## Scenario 22: Configuring Auto-Capture
+
+**Context:** User wants to adjust auto-capture thresholds or change LLM provider.
+
+**Flow (change provider):**
+1. `configure_autocapture(llm_provider="ollama")` - Switch to Ollama for summarization
+
+**Flow (adjust thresholds):**
+1. `configure_autocapture(min_file_edits=2, min_tokens=2000)` - Capture only larger sessions
+
+**Flow (disable):**
+1. `configure_autocapture(enabled=False)` - Turn off auto-capture
+
+**Tools Used:** `configure_autocapture`
+
+---
+
 ## Tool Summary by Scenario
 
 | Scenario | Primary Tools |
@@ -470,10 +544,12 @@ insight_to_cortex(
 | Capturing insights | `insight_to_cortex` |
 | Validating stale insights | `search_cortex`, `validate_insight` |
 | Admin/debug | `get_cortex_version`, `configure_cortex` |
+| Auto-capture status | `get_autocapture_status` |
+| Configure auto-capture | `configure_autocapture` |
 
 ---
 
-## Final Tool Set (19 tools)
+## Final Tool Set (21 tools)
 
 | Tool | Purpose |
 |------|---------|
@@ -496,3 +572,5 @@ insight_to_cortex(
 | `summarize_initiative` | Narrative summary of initiative progress |
 | `insight_to_cortex` | Save code analysis insights linked to files (auto-used after analysis) |
 | `validate_insight` | Verify stale insights against current code, deprecate if invalid |
+| `get_autocapture_status` | Check hook installation, LLM providers, and capture statistics |
+| `configure_autocapture` | Configure auto-capture settings (enabled, provider, thresholds) |

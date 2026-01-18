@@ -3,8 +3,18 @@
 Cortex Auto-Capture Hook for Claude Code
 
 This script is triggered by Claude Code's SessionEnd hook when a session ends.
-It analyzes the session transcript, determines significance, generates a summary
-using an LLM, and saves the session to Cortex memory.
+It analyzes the session transcript, determines significance, and queues the
+session for async processing by the Cortex daemon.
+
+The hook is designed to exit FAST (<100ms) to avoid blocking Claude Code exit.
+Summary generation and storage happen asynchronously in the daemon.
+
+Flow:
+  1. Parse transcript (fast - just file read)
+  2. Check significance (fast - just counting)
+  3. Queue for processing (fast - just file write)
+  4. Ping daemon to wake up (fire-and-forget)
+  5. EXIT IMMEDIATELY
 
 Input (stdin JSON):
 {
@@ -15,7 +25,7 @@ Input (stdin JSON):
 }
 
 Exit codes:
-  0 - Success (captured or skipped gracefully)
+  0 - Success (queued or skipped gracefully)
   1 - Error (logged but non-fatal to Claude Code)
 """
 
@@ -139,20 +149,56 @@ def parse_transcript(transcript_path: str) -> dict:
             except json.JSONDecodeError:
                 continue
 
-            # Extract project path
-            if "project" in entry and not result["project_path"]:
-                result["project_path"] = entry["project"]
+            # Extract project path from cwd field
+            if "cwd" in entry and not result["project_path"]:
+                result["project_path"] = entry["cwd"]
 
-            # Count tokens from content
-            content = entry.get("display", entry.get("content", ""))
-            if content:
+            # Get message content - Claude Code nests under "message"
+            message = entry.get("message", {})
+            role = message.get("role", entry.get("type", ""))
+            content = message.get("content", entry.get("display", entry.get("content", "")))
+
+            # Handle content that can be string or array of content blocks
+            if isinstance(content, str) and content:
                 result["token_count"] += len(content) // 4
-                text_parts.append(content)
+                text_parts.append(f"[{role.upper()}] {content}")
+                result["messages"].append({"role": role, "content": content})
 
-            # Track tool calls and file edits
-            entry_type = entry.get("type", "")
+            elif isinstance(content, list):
+                # Array of content blocks (text, tool_use, tool_result, etc.)
+                for block in content:
+                    block_type = block.get("type", "")
 
-            if entry_type == "assistant" and "toolUse" in entry:
+                    if block_type == "text":
+                        text = block.get("text", "")
+                        if text:
+                            result["token_count"] += len(text) // 4
+                            text_parts.append(f"[{role.upper()}] {text}")
+                            result["messages"].append({"role": role, "content": text})
+
+                    elif block_type == "tool_use":
+                        tool_name = block.get("name", "")
+                        tool_input = block.get("input", {})
+
+                        result["tool_calls"].append({
+                            "name": tool_name,
+                            "input": tool_input,
+                        })
+
+                        # Track file edits
+                        if tool_name in ("Write", "Edit", "NotebookEdit"):
+                            file_path = tool_input.get("file_path") or tool_input.get("notebook_path")
+                            if file_path:
+                                result["files_edited"].add(file_path)
+
+                    elif block_type == "tool_result":
+                        # Tool results also count toward content
+                        result_content = block.get("content", "")
+                        if isinstance(result_content, str) and result_content:
+                            result["token_count"] += len(result_content) // 4
+
+            # Legacy format support: direct toolUse array
+            if "toolUse" in entry:
                 for tu in entry.get("toolUse", []):
                     tool_name = tu.get("name", "")
                     tool_input = tu.get("input", {})
@@ -162,25 +208,10 @@ def parse_transcript(transcript_path: str) -> dict:
                         "input": tool_input,
                     })
 
-                    # Track file edits
                     if tool_name in ("Write", "Edit", "NotebookEdit"):
                         file_path = tool_input.get("file_path") or tool_input.get("notebook_path")
                         if file_path:
                             result["files_edited"].add(file_path)
-
-            elif entry_type == "tool_use":
-                tool_name = entry.get("name", "")
-                tool_input = entry.get("input", {})
-
-                result["tool_calls"].append({
-                    "name": tool_name,
-                    "input": tool_input,
-                })
-
-                if tool_name in ("Write", "Edit", "NotebookEdit"):
-                    file_path = tool_input.get("file_path") or tool_input.get("notebook_path")
-                    if file_path:
-                        result["files_edited"].add(file_path)
 
     except Exception as e:
         log(f"Error parsing transcript: {e}", "ERROR")
@@ -222,98 +253,70 @@ def is_significant(transcript: dict, config: dict) -> tuple[bool, str]:
     return False, f"tokens={tokens}, edits={edits}, tools={tools}"
 
 
-def generate_summary(transcript_text: str, config: dict) -> str:
+def queue_session_for_processing(
+    session_id: str,
+    transcript_text: str,
+    files_edited: list,
+    repository: str,
+) -> bool:
     """
-    Generate a session summary using available LLM.
+    Queue a session for async processing by the Cortex daemon.
 
-    Tries providers in order: Claude CLI, Anthropic API, Ollama
+    The daemon will generate the summary and save to Cortex asynchronously,
+    allowing the hook to exit immediately.
+
+    Returns True if queued successfully.
     """
-    # Truncate transcript for context window
-    max_chars = 80000
-    if len(transcript_text) > max_chars:
-        transcript_text = transcript_text[:max_chars] + "\n\n[... truncated ...]"
+    queue_file = CORTEX_DATA_DIR / "capture_queue.json"
 
-    prompt = f"""Analyze this Claude Code session transcript and write a detailed summary.
-
-Focus on:
-1. What was implemented or changed and WHY
-2. Key architectural decisions made
-3. Problems encountered and how they were solved
-4. Non-obvious patterns or gotchas discovered
-5. Future work or TODOs identified
-
-Keep the summary comprehensive but concise (2-4 paragraphs).
-
-Session Transcript:
----
-{transcript_text}
----
-
-Summary:"""
-
-    # Try Claude CLI first (simplest, uses existing auth)
-    import subprocess
-    import shutil
-
-    claude_path = shutil.which("claude")
-    if claude_path:
-        try:
-            result = subprocess.run(
-                [claude_path, "-p", prompt, "--model", "haiku"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except Exception as e:
-            log(f"Claude CLI failed: {e}", "WARNING")
-
-    # Try Anthropic API
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if api_key:
-        try:
-            payload = {
-                "model": "claude-3-haiku-20240307",
-                "max_tokens": 1500,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=json.dumps(payload).encode(),
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode())
-                return data["content"][0]["text"]
-        except Exception as e:
-            log(f"Anthropic API failed: {e}", "WARNING")
-
-    # Try Ollama
-    ollama_url = config.get("llm", {}).get("ollama", {}).get("base_url", "http://localhost:11434")
     try:
-        payload = {
-            "model": config.get("llm", {}).get("ollama", {}).get("model", "llama3.2"),
-            "prompt": prompt,
-            "stream": False,
-        }
+        CORTEX_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        queue = []
+        if queue_file.exists():
+            try:
+                queue = json.loads(queue_file.read_text())
+            except Exception:
+                queue = []
+
+        # Add session to queue
+        queue.append({
+            "session_id": session_id,
+            "transcript_text": transcript_text,
+            "files_edited": files_edited,
+            "repository": repository,
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        # Keep only last 100 queued sessions
+        queue = queue[-100:]
+        queue_file.write_text(json.dumps(queue, indent=2))
+
+        return True
+
+    except Exception as e:
+        log(f"Failed to queue session: {e}", "ERROR")
+        return False
+
+
+def notify_daemon():
+    """
+    Notify the Cortex daemon that there are sessions to process.
+
+    This is a fire-and-forget ping - if daemon isn't running, the queue
+    will be processed when it starts.
+    """
+    try:
         req = urllib.request.Request(
-            f"{ollama_url}/api/generate",
-            data=json.dumps(payload).encode(),
+            f"{CORTEX_API_URL}/api/process-queue",
+            method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read().decode())
-            return data.get("response", "")
-    except Exception as e:
-        log(f"Ollama failed: {e}", "DEBUG")
-
-    # Fallback: simple extraction
-    return f"Session with {len(transcript_text)} characters of conversation."
+        # Very short timeout - we don't care about the response
+        urllib.request.urlopen(req, timeout=1)
+    except Exception:
+        # Daemon not running or slow - that's fine, queue will be processed later
+        pass
 
 
 def detect_repository(project_path: str) -> str:
@@ -338,38 +341,6 @@ def detect_repository(project_path: str) -> str:
         pass
 
     return path.name
-
-
-def call_cortex_api(summary: str, changed_files: list, repository: str) -> bool:
-    """
-    Call the Cortex API to save the session.
-
-    Returns True if successful.
-    """
-    try:
-        payload = {
-            "summary": summary,
-            "changed_files": changed_files,
-            "repository": repository,
-        }
-
-        req = urllib.request.Request(
-            f"{CORTEX_API_URL}/api/commit",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                return True
-
-    except urllib.error.URLError as e:
-        log(f"Cortex API not available: {e}", "WARNING")
-    except Exception as e:
-        log(f"Cortex API call failed: {e}", "ERROR")
-
-    return False
 
 
 def main():
@@ -417,46 +388,23 @@ def main():
 
     log(f"Session is significant: {sig_reason}")
 
-    # Generate summary
-    summary = generate_summary(transcript["text"], config)
-    log(f"Generated summary ({len(summary)} chars)")
-
     # Detect repository
     repository = detect_repository(transcript["project_path"] or cwd)
 
-    # Get changed files
-    changed_files = transcript["files_edited"]
-
-    # Try to save via Cortex API
-    if call_cortex_api(summary, changed_files, repository):
-        log(f"Session saved to Cortex: {repository}")
-        mark_session_captured(session_id)
-        return 0
-
-    # API not available - save to pending file for later
-    pending_file = CORTEX_DATA_DIR / "pending_sessions.json"
-    try:
-        pending = []
-        if pending_file.exists():
-            pending = json.loads(pending_file.read_text())
-
-        pending.append({
-            "session_id": session_id,
-            "summary": summary,
-            "changed_files": changed_files,
-            "repository": repository,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-
-        # Keep only last 50 pending
-        pending = pending[-50:]
-        pending_file.write_text(json.dumps(pending, indent=2))
-
-        log(f"Session queued for later (Cortex API unavailable)")
+    # Queue session for async processing (fast - no LLM call)
+    if queue_session_for_processing(
+        session_id=session_id,
+        transcript_text=transcript["text"],
+        files_edited=transcript["files_edited"],
+        repository=repository,
+    ):
+        log(f"Session queued for async processing: {repository}")
         mark_session_captured(session_id)
 
-    except Exception as e:
-        log(f"Failed to queue session: {e}", "ERROR")
+        # Notify daemon to process queue (fire-and-forget)
+        notify_daemon()
+    else:
+        log("Failed to queue session", "ERROR")
 
     return 0
 

@@ -31,7 +31,11 @@
 DAEMON_CONTAINER_NAME="cortex-daemon"
 DAEMON_PORT="${CORTEX_DAEMON_PORT:-8000}"
 HTTP_PORT="${CORTEX_HTTP_PORT:-8080}"
+SUMMARIZER_PORT="${CORTEX_SUMMARIZER_PORT:-8081}"
 IMAGE_NAME="cortex"
+
+# Summarizer PID file (for claude-cli LLM provider)
+SUMMARIZER_PID_FILE="$HOME/.cortex/summarizer.pid"
 
 # Defaults
 DATA_PATH="${CORTEX_DATA_PATH:-$HOME/.cortex}"
@@ -247,6 +251,77 @@ build_docker_env() {
     [ -n "$CORTEX_DEBUG" ] && DOCKER_ENVS+=("-e" "CORTEX_DEBUG=$CORTEX_DEBUG")
     [ -n "$ANTHROPIC_API_KEY" ] && DOCKER_ENVS+=("-e" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
     [ -n "$CORTEX_LOG_FILE" ] && DOCKER_ENVS+=("-e" "CORTEX_LOG_FILE=$CORTEX_LOG_FILE")
+
+    # Pass summarizer URL if using claude-cli (host.docker.internal for Mac/Windows)
+    if [ "$CORTEX_HEADER_PROVIDER" = "claude-cli" ]; then
+        DOCKER_ENVS+=("-e" "CORTEX_SUMMARIZER_URL=http://host.docker.internal:$SUMMARIZER_PORT")
+    fi
+}
+
+# --- Summarizer Functions (for claude-cli LLM provider) ---
+
+is_summarizer_running() {
+    if [ -f "$SUMMARIZER_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$SUMMARIZER_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+start_summarizer() {
+    # Only start if using claude-cli as LLM provider
+    if [ "$CORTEX_HEADER_PROVIDER" != "claude-cli" ]; then
+        return 0
+    fi
+
+    # Check if claude CLI is available
+    if ! command -v claude &>/dev/null; then
+        log_warn "claude CLI not found - summarizer not started"
+        return 0
+    fi
+
+    if is_summarizer_running; then
+        log_info "Summarizer is already running"
+        return 0
+    fi
+
+    log_info "Starting summarizer proxy on port $SUMMARIZER_PORT..."
+
+    # Ensure data directory exists
+    mkdir -p "$DATA_PATH"
+
+    # Start summarizer in background (run from cortex source directory)
+    cd "$CORTEX_SRC_DIR"
+    nohup python3 -m src.summarizer.server --port "$SUMMARIZER_PORT" \
+        > "$DATA_PATH/summarizer.log" 2>&1 &
+    local pid=$!
+    cd - >/dev/null
+    echo "$pid" > "$SUMMARIZER_PID_FILE"
+
+    # Wait briefly and check if it started
+    sleep 1
+    if is_summarizer_running; then
+        log_info "Summarizer started (PID: $pid)"
+        return 0
+    else
+        log_error "Summarizer failed to start"
+        rm -f "$SUMMARIZER_PID_FILE"
+        return 1
+    fi
+}
+
+stop_summarizer() {
+    if is_summarizer_running; then
+        local pid
+        pid=$(cat "$SUMMARIZER_PID_FILE")
+        log_info "Stopping summarizer (PID: $pid)..."
+        kill "$pid" 2>/dev/null || true
+        rm -f "$SUMMARIZER_PID_FILE"
+        log_info "Summarizer stopped"
+    fi
 }
 
 start_daemon() {
@@ -275,6 +350,10 @@ start_daemon() {
 
     if wait_for_daemon; then
         log_info "Daemon started on port $DAEMON_PORT"
+
+        # Start summarizer if using claude-cli
+        start_summarizer
+
         return 0
     else
         log_error "Daemon failed to start"
@@ -284,6 +363,9 @@ start_daemon() {
 }
 
 stop_daemon() {
+    # Stop summarizer first
+    stop_summarizer
+
     if is_daemon_running; then
         log_info "Stopping Cortex daemon..."
         docker stop "$DAEMON_CONTAINER_NAME" >&2
@@ -779,14 +861,27 @@ try:
         print('  Hook script: not installed')
 
     if status.claude_code_installed:
-        print('  Registered: yes (in ~/.claude/settings.json)')
+        details = status.details.get('claude_code', {})
+        hook_format = details.get('hook_format')
+        needs_migration = details.get('needs_migration', False)
+        if needs_migration:
+            print('  Registered: yes (OLD FORMAT - needs migration)')
+        else:
+            print('  Registered: yes (in ~/.claude/settings.json)')
     else:
         print('  Registered: no')
 
     print('')
 
     # Overall status
-    if status.any_installed:
+    details = status.details.get('claude_code', {})
+    needs_migration = details.get('needs_migration', False)
+
+    if needs_migration:
+        print('Status: Auto-capture ENABLED but using deprecated hook format')
+        print('')
+        print('Run \\'cortex hooks repair\\' to migrate to the new format.')
+    elif status.any_installed:
         print('Status: Auto-capture is ENABLED')
     elif status.claude_code_available:
         print('Status: Auto-capture NOT enabled')

@@ -84,6 +84,13 @@ def start_http_server():
     logger.info("HTTP server started on port 8080")
 
 
+def start_queue_processor():
+    """Start the auto-capture queue processor in a background thread."""
+    from src.autocapture import start_processor
+    start_processor()
+    logger.info("Queue processor started")
+
+
 def main():
     """Main entry point for the MCP server."""
     # Parse command line arguments
@@ -100,6 +107,9 @@ def main():
 
     if enable_http:
         start_http_server()
+
+    # Always start the queue processor for async auto-capture
+    start_queue_processor()
 
     logger.info("Starting Cortex MCP server")
     mcp.run()

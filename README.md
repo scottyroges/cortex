@@ -12,6 +12,7 @@ A local, privacy-first memory system for Claude Code. Provides RAG capabilities 
 - **Secret Scrubbing**: Automatically redacts API keys, tokens, and credentials
 - **Memory Browser**: Web UI at `http://localhost:8080` for exploring stored memories
 - **Auto-Update**: `cortex update` command with migrations and health checks
+- **Auto-Capture**: Automatic session memory via Claude Code hooks - no manual saves needed
 
 ## Quick Start
 
@@ -147,6 +148,12 @@ cortex update
 # Health check
 cortex doctor              # Quick essential checks
 cortex doctor --verbose    # Comprehensive diagnostics
+
+# Hook management (for auto-capture)
+cortex hooks status        # Check hook installation status
+cortex hooks install       # Install Claude Code hooks
+cortex hooks repair        # Fix broken hook installation
+cortex hooks uninstall     # Remove hooks
 ```
 
 ### Checking if Daemon is Up to Date
@@ -223,6 +230,84 @@ You can also check from within a Claude Code session using `orient_session` - it
 | `toggle_cortex` | Enable/disable for A/B testing |
 | `get_cortex_version` | Check daemon version and if rebuild is needed |
 | `get_skeleton` | Get file tree structure for a repository |
+
+### Auto-Capture Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_autocapture_status` | Check hook installation, LLM providers, and capture statistics |
+| `configure_autocapture` | Configure auto-capture settings (enabled, provider, thresholds) |
+
+## Auto-Capture
+
+Cortex automatically captures session summaries when Claude Code sessions end. No manual `commit_to_cortex` calls needed.
+
+### How It Works
+
+1. **Hook Installation**: Cortex registers a `SessionEnd` hook with Claude Code
+2. **Transcript Parsing**: When a session ends, the hook parses the JSONL transcript
+3. **Significance Detection**: Only "significant" sessions are captured (configurable thresholds)
+4. **LLM Summarization**: An LLM generates a summary of what was accomplished
+5. **Async Storage**: Summary is queued and saved by the daemon (non-blocking)
+
+### Setup
+
+Hooks are installed automatically when the daemon starts. Verify with:
+
+```bash
+cortex hooks status
+```
+
+If hooks aren't installed, run:
+
+```bash
+cortex hooks install
+```
+
+### Configuration
+
+Auto-capture settings live in `~/.cortex/config.yaml`:
+
+```yaml
+autocapture:
+  enabled: true
+  significance:
+    min_tokens: 1000       # Minimum tokens in session
+    min_file_edits: 1      # Minimum files edited
+    min_tool_calls: 3      # Minimum tool calls
+
+llm:
+  primary_provider: claude-cli  # Or: anthropic, ollama, openrouter
+  fallback_chain:
+    - claude-cli
+    - ollama
+```
+
+A session is captured if it meets ANY threshold (not all).
+
+### LLM Providers
+
+| Provider | Requirements |
+|----------|--------------|
+| `claude-cli` | Claude CLI installed and authenticated (default) |
+| `anthropic` | `ANTHROPIC_API_KEY` environment variable |
+| `ollama` | Ollama running locally with a model |
+| `openrouter` | `OPENROUTER_API_KEY` environment variable |
+
+### Debugging
+
+Check auto-capture status:
+
+```bash
+# Via MCP tool
+get_autocapture_status
+
+# Hook logs
+cat ~/.cortex/hook.log
+
+# Captured sessions list
+cat ~/.cortex/captured_sessions.json
+```
 
 ## Selective Ingestion
 
@@ -453,9 +538,12 @@ def get_migrations():
 ```
 Cortex/
 ├── cortex                 # Wrapper script (install to /usr/local/bin)
+├── hooks/                 # Claude Code hook scripts
+│   └── claude_session_end.py  # SessionEnd hook for auto-capture
 ├── src/
 │   ├── server.py          # MCP server entry point
 │   ├── version.py         # Version checking and update detection
+│   ├── config.py          # Configuration (settings.json + config.yaml)
 │   ├── tools/             # MCP tool implementations
 │   │   ├── orient.py      # orient_session (session entry point)
 │   │   ├── search.py      # search_cortex
@@ -464,7 +552,21 @@ Cortex/
 │   │   ├── notes.py       # save_note, commit_to_cortex, insight_to_cortex
 │   │   ├── initiatives.py # create, list, focus, complete initiatives
 │   │   ├── recall.py      # recall_recent_work, summarize_initiative
+│   │   ├── autocapture.py # get_autocapture_status, configure_autocapture
 │   │   └── admin.py       # configure, toggle, get_version, get_skeleton
+│   ├── autocapture/       # Auto-capture system
+│   │   ├── transcript.py  # JSONL transcript parsing
+│   │   ├── significance.py # Significance detection
+│   │   └── queue_processor.py # Async queue processing
+│   ├── llm/               # LLM provider abstraction
+│   │   ├── provider.py    # Base LLMProvider class
+│   │   ├── anthropic_provider.py
+│   │   ├── claude_cli_provider.py
+│   │   ├── ollama_provider.py
+│   │   └── openrouter_provider.py
+│   ├── install/           # Hook installation
+│   │   ├── hooks.py       # Hook management interface
+│   │   └── claude_code.py # Claude Code integration
 │   ├── migrations/        # Schema versioning and database migrations
 │   ├── search/            # Hybrid search, BM25, reranker
 │   ├── ingest/            # AST chunking, delta sync, skeleton

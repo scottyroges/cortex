@@ -199,71 +199,80 @@ def parse_transcript_jsonl(content: str, session_id: str = "unknown") -> ParsedT
             if end_time is None or timestamp > end_time:
                 end_time = timestamp
 
-        # Extract project path
-        if "project" in entry and project_path is None:
+        # Extract project path from cwd field (current format) or project (legacy)
+        if "cwd" in entry and project_path is None:
+            project_path = entry["cwd"]
+        elif "project" in entry and project_path is None:
             project_path = entry["project"]
 
-        # Parse different entry types
-        entry_type = entry.get("type", "")
+        # Claude Code nests message content under "message" key
+        message = entry.get("message", {})
+        role = message.get("role", entry.get("type", ""))
+        content = message.get("content", entry.get("display", entry.get("content", "")))
 
-        if entry_type == "user" or "display" in entry:
-            # User message
-            content_text = entry.get("display", entry.get("content", ""))
-            if content_text:
-                messages.append(
-                    Message(
-                        role="user",
-                        content=content_text,
-                        timestamp=timestamp,
-                    )
+        # Handle content that can be string or array of content blocks
+        if isinstance(content, str) and content:
+            messages.append(
+                Message(
+                    role=role,
+                    content=content,
+                    timestamp=timestamp,
                 )
+            )
 
-        elif entry_type == "assistant":
-            # Assistant message
-            content_text = entry.get("content", entry.get("message", ""))
+        elif isinstance(content, list):
+            # Array of content blocks (text, tool_use, tool_result, thinking, etc.)
             msg_tool_calls = []
+            text_parts = []
 
-            # Extract tool uses from assistant message
-            if "toolUse" in entry:
-                for tu in entry.get("toolUse", []):
+            for block in content:
+                block_type = block.get("type", "")
+
+                if block_type == "text":
+                    text = block.get("text", "")
+                    if text:
+                        text_parts.append(text)
+
+                elif block_type == "tool_use":
                     tc = ToolCall(
-                        name=tu.get("name", "unknown"),
-                        input=tu.get("input", {}),
+                        name=block.get("name", "unknown"),
+                        input=block.get("input", {}),
                         timestamp=timestamp,
                     )
                     tool_calls.append(tc)
                     msg_tool_calls.append(tc)
 
-            if content_text or msg_tool_calls:
+                elif block_type == "tool_result":
+                    # Tool result in content array - find matching tool call
+                    tool_use_id = block.get("tool_use_id", "")
+                    result_content = block.get("content", "")
+                    if isinstance(result_content, list):
+                        # Content can be array of text blocks
+                        result_content = " ".join(
+                            b.get("text", "") for b in result_content if b.get("type") == "text"
+                        )
+
+            # Create message if we have text or tool calls
+            combined_text = "\n".join(text_parts)
+            if combined_text or msg_tool_calls:
                 messages.append(
                     Message(
-                        role="assistant",
-                        content=content_text,
+                        role=role,
+                        content=combined_text,
                         timestamp=timestamp,
                         tool_calls=msg_tool_calls,
                     )
                 )
 
-        elif entry_type == "tool_result":
-            # Tool result - update the corresponding tool call
-            tool_name = entry.get("name", "")
-            result = entry.get("result", entry.get("output", ""))
-
-            # Find the most recent matching tool call without output
-            for tc in reversed(tool_calls):
-                if tc.name == tool_name and tc.output is None:
-                    tc.output = str(result) if result else ""
-                    tc.success = not entry.get("error", False)
-                    break
-
-        elif entry_type == "tool_use":
-            # Direct tool use entry
-            tc = ToolCall(
-                name=entry.get("name", "unknown"),
-                input=entry.get("input", {}),
-                timestamp=timestamp,
-            )
-            tool_calls.append(tc)
+        # Legacy format support: direct toolUse array at entry level
+        if "toolUse" in entry:
+            for tu in entry.get("toolUse", []):
+                tc = ToolCall(
+                    name=tu.get("name", "unknown"),
+                    input=tu.get("input", {}),
+                    timestamp=timestamp,
+                )
+                tool_calls.append(tc)
 
     return ParsedTranscript(
         session_id=session_id,

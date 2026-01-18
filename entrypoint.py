@@ -21,6 +21,7 @@ def main():
         import os
         from logging_config import get_logger
         from src.http import run_server
+        from src.autocapture import start_processor
 
         logger = get_logger("entrypoint")
 
@@ -46,6 +47,10 @@ def main():
                     # Continue anyway - migrations should be non-destructive
         except Exception as e:
             logger.warning(f"Could not check migrations: {e}")
+
+        # Start the queue processor for async auto-capture
+        start_processor()
+        logger.info("Queue processor started")
 
         port = int(os.environ.get("CORTEX_HTTP_PORT", "8080"))
         run_server(host="0.0.0.0", port=port)

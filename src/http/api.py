@@ -15,6 +15,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from logging_config import get_logger
+from src.config import get_data_path
 from src.search import HybridSearcher, RerankerService
 from src.security import scrub_secrets
 from src.storage import get_chroma_client, get_or_create_collection
@@ -396,14 +397,13 @@ def autocapture_status() -> dict[str, Any]:
 
     Returns configuration, hook status, and recent captures.
     """
-    from pathlib import Path
-
-    cortex_data = Path.home() / ".cortex"
+    cortex_data = get_data_path()
 
     # Check hook installation
     hook_script = cortex_data / "hooks" / "claude_session_end.py"
     hook_log = cortex_data / "hook.log"
     captured_sessions = cortex_data / "captured_sessions.json"
+    capture_queue = cortex_data / "capture_queue.json"
 
     # Count recent captures
     recent_captures = 0
@@ -412,6 +412,16 @@ def autocapture_status() -> dict[str, Any]:
             import json
             data = json.loads(captured_sessions.read_text())
             recent_captures = len(data.get("captured", []))
+        except Exception:
+            pass
+
+    # Count queued sessions
+    queued_count = 0
+    if capture_queue.exists():
+        try:
+            import json
+            data = json.loads(capture_queue.read_text())
+            queued_count = len(data) if isinstance(data, list) else 0
         except Exception:
             pass
 
@@ -428,5 +438,24 @@ def autocapture_status() -> dict[str, Any]:
         "hook_script_installed": hook_script.exists(),
         "hook_script_path": str(hook_script),
         "captured_sessions_count": recent_captures,
+        "queued_sessions_count": queued_count,
         "last_hook_logs": last_logs,
+    }
+
+
+@router.post("/process-queue")
+def process_queue() -> dict[str, Any]:
+    """
+    Trigger immediate processing of the capture queue.
+
+    Called by the session end hook to notify the daemon that
+    new sessions are ready for processing.
+    """
+    from src.autocapture import trigger_processing
+
+    trigger_processing()
+    logger.debug("Queue processing triggered")
+
+    return {
+        "status": "triggered",
     }

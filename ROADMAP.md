@@ -33,8 +33,8 @@ Cortex fills this gap by storing:
 | **Session Recall** | ✅ Good | "What did I work on?" queries |
 | **Staleness Detection** | ✅ Good | Insights validated against file changes |
 | **Installation & Updates** | ✅ Good | `cortex update`, `cortex doctor`, migrations |
+| **Auto-Capture** | ✅ Good | Session hooks, LLM summarization, async queue |
 | **Code Indexing** | ⚠️ Marginal | Only ~20-30% of queries benefit over Grep |
-| **Automatic Capture** | ❌ Gap | Too manual, unreliable |
 | **Structural Knowledge** | ❌ Gap | No dependencies, entry points, importance |
 
 *See `analysis/code-indexing-analysis.md` for full analysis.*
@@ -95,15 +95,25 @@ Cortex fills this gap by storing:
 | **Health Check** | ✅ | `cortex doctor` (essential) and `cortex doctor --verbose` (comprehensive) |
 | **Migration System** | ✅ | Schema versioning with auto-migrations on startup, auto-backup before migrate |
 
-### Auto-Capture (Medium Priority)
+### Auto-Capture ✅
 
-*Eliminate manual discipline requirements.*
+*Eliminate manual discipline requirements - complete.*
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Session Lifecycle Hooks** | ✅ | Claude Code `SessionEnd` hook auto-captures summaries |
+| **Transcript Parsing** | ✅ | JSONL parser extracts messages, tool calls, file edits |
+| **Significance Detection** | ✅ | Configurable thresholds (tokens, file edits, tool calls) |
+| **LLM Summarization** | ✅ | Multi-provider support (Claude CLI, Anthropic, Ollama, OpenRouter) |
+| **Async Queue Processing** | ✅ | Non-blocking hook (<100ms), daemon processes in background |
+| **Hook Management CLI** | ✅ | `cortex hooks install/status/repair/uninstall` |
+| **MCP Tools** | ✅ | `get_autocapture_status`, `configure_autocapture` |
+
+#### Future Enhancements (Lower Priority)
 
 | Feature | Description | Value |
 |---------|-------------|-------|
-| **Session Lifecycle Hooks** | Integration with Claude Code hooks to auto-capture session summaries on exit. LLM generates summary from transcript. | Eliminates manual `commit_to_cortex` |
 | **Git Commit Watcher** | Background process watches for git commits, auto-indexes changed files + commit messages. | Memory stays fresh automatically |
-| **Session Auto-Prompt** | Detect significant sessions (token count, file edits, time) and prompt to save before closing. | Catch sessions that would be lost |
 | **Log Eater** | Ingest `~/.claude/sessions` logs with LLM summarization. Backfill memory retroactively. | Memory from past sessions without workflow change |
 
 ### Lower Priority

@@ -14,11 +14,9 @@ from logging_config import get_logger
 
 logger = get_logger("install.claude_code")
 
-# Hook configuration for Claude Code
-CORTEX_HOOK_CONFIG = {
-    "command": "python3",
-    "timeout": 15000,  # 15 seconds for LLM summarization
-}
+# Hook configuration for Claude Code (new matcher-based format)
+# See: https://code.claude.com/docs/en/hooks
+CORTEX_HOOK_TIMEOUT = 15000  # 15 seconds for LLM summarization
 
 
 def get_claude_settings_path() -> Path:
@@ -89,6 +87,8 @@ def is_claude_code_hook_installed() -> bool:
     """
     Check if the Cortex hook is already installed in Claude Code.
 
+    Detects both old format (deprecated) and new matcher-based format.
+
     Returns:
         True if hook is registered in settings.json
     """
@@ -98,11 +98,37 @@ def is_claude_code_hook_installed() -> bool:
 
     hook_script = str(get_hook_script_path())
 
-    for hook in session_end_hooks:
-        args = hook.get("args", [])
-        if args and hook_script in args[0]:
-            return True
+    for entry in session_end_hooks:
+        # New format: {"matcher": {...}, "hooks": [...]}
+        if "hooks" in entry:
+            for hook in entry.get("hooks", []):
+                command = hook.get("command", "")
+                if hook_script in command:
+                    return True
+        # Old format (deprecated): {"command": "...", "args": [...]}
+        elif "args" in entry:
+            args = entry.get("args", [])
+            if args and hook_script in args[0]:
+                return True
 
+    return False
+
+
+def _is_old_format_hook(entry: dict, hook_script: str) -> bool:
+    """Check if an entry is our hook in the old deprecated format."""
+    if "args" in entry and "hooks" not in entry:
+        args = entry.get("args", [])
+        return bool(args and hook_script in args[0])
+    return False
+
+
+def _is_new_format_hook(entry: dict, hook_script: str) -> bool:
+    """Check if an entry is our hook in the new matcher format."""
+    if "hooks" in entry:
+        for hook in entry.get("hooks", []):
+            command = hook.get("command", "")
+            if hook_script in command:
+                return True
     return False
 
 
@@ -160,31 +186,89 @@ def install_claude_code_hook(
     if "SessionEnd" not in settings["hooks"]:
         settings["hooks"]["SessionEnd"] = []
 
-    # Build our hook config
+    hook_script_str = str(target_script)
+
+    # Check for old format hooks and migrate them
+    old_hooks_removed = _migrate_old_format_hooks(settings, hook_script_str)
+
+    # Build our hook config (SessionEnd doesn't use matchers)
+    # See: https://code.claude.com/docs/en/hooks
     cortex_hook = {
-        **CORTEX_HOOK_CONFIG,
-        "args": [str(target_script)],
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"python3 {hook_script_str}",
+                "timeout": CORTEX_HOOK_TIMEOUT,
+            }
+        ],
     }
 
-    # Check if we're already registered (by script path)
-    hook_script_str = str(target_script)
+    # Check if we're already registered in new format
     already_registered = any(
-        hook.get("args", [None])[0] == hook_script_str
-        for hook in settings["hooks"]["SessionEnd"]
+        _is_new_format_hook(entry, hook_script_str)
+        for entry in settings["hooks"]["SessionEnd"]
     )
 
     if not already_registered:
         settings["hooks"]["SessionEnd"].append(cortex_hook)
 
+    if not already_registered or old_hooks_removed:
         if not save_claude_settings(settings):
             return False, "Failed to update Claude settings"
 
-    return True, f"Hook installed at {target_script}"
+    msg = f"Hook installed at {target_script}"
+    if old_hooks_removed:
+        msg += " (migrated from old format)"
+    return True, msg
+
+
+def _migrate_old_format_hooks(settings: dict, hook_script_str: str) -> bool:
+    """
+    Remove old format Cortex hooks and fix invalid matcher formats.
+
+    Handles:
+    1. Old format hooks with "args" field (deprecated)
+    2. New format hooks with invalid "matcher": {} (SessionEnd doesn't use matchers)
+
+    Args:
+        settings: Claude settings dict (modified in place)
+        hook_script_str: Path to our hook script
+
+    Returns:
+        True if any migrations were performed
+    """
+    session_end_hooks = settings.get("hooks", {}).get("SessionEnd", [])
+    migrated = False
+
+    # Remove old format entries (those with "args")
+    original_count = len(session_end_hooks)
+    new_hooks = [
+        entry for entry in session_end_hooks
+        if not _is_old_format_hook(entry, hook_script_str)
+    ]
+
+    if len(new_hooks) != original_count:
+        settings["hooks"]["SessionEnd"] = new_hooks
+        logger.info("Removed old format Cortex hooks")
+        migrated = True
+        session_end_hooks = new_hooks
+
+    # Fix hooks with invalid matcher field (SessionEnd doesn't use matchers)
+    for entry in session_end_hooks:
+        if _is_new_format_hook(entry, hook_script_str):
+            if "matcher" in entry:
+                del entry["matcher"]
+                logger.info("Removed invalid matcher field from SessionEnd hook")
+                migrated = True
+
+    return migrated
 
 
 def uninstall_claude_code_hook() -> tuple[bool, str]:
     """
     Remove the Cortex hook from Claude Code.
+
+    Handles both old format and new matcher-based format.
 
     Returns:
         Tuple of (success, message)
@@ -196,10 +280,11 @@ def uninstall_claude_code_hook() -> tuple[bool, str]:
 
     hook_script_str = str(get_hook_script_path())
 
-    # Filter out our hook
+    # Filter out our hook (both old and new formats)
     new_hooks = [
-        hook for hook in session_end_hooks
-        if hook.get("args", [None])[0] != hook_script_str
+        entry for entry in session_end_hooks
+        if not _is_old_format_hook(entry, hook_script_str)
+        and not _is_new_format_hook(entry, hook_script_str)
     ]
 
     if len(new_hooks) != len(session_end_hooks):
@@ -227,12 +312,28 @@ def get_claude_code_hook_status() -> dict:
     """
     hook_script = get_hook_script_path()
     settings_path = get_claude_settings_path()
+    hook_script_str = str(hook_script)
+
+    # Detect format
+    settings = load_claude_settings()
+    session_end_hooks = settings.get("hooks", {}).get("SessionEnd", [])
+
+    format_type = None
+    for entry in session_end_hooks:
+        if _is_new_format_hook(entry, hook_script_str):
+            format_type = "new"
+            break
+        elif _is_old_format_hook(entry, hook_script_str):
+            format_type = "old"
+            break
 
     return {
         "cli_available": is_claude_cli_available(),
         "hook_registered": is_claude_code_hook_installed(),
         "hook_script_exists": hook_script.exists(),
-        "hook_script_path": str(hook_script),
+        "hook_script_path": hook_script_str,
         "settings_file_exists": settings_path.exists(),
         "settings_file_path": str(settings_path),
+        "hook_format": format_type,  # "new", "old", or None
+        "needs_migration": format_type == "old",
     }

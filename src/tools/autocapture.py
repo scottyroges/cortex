@@ -10,6 +10,7 @@ from src.config import (
     load_yaml_config,
     save_yaml_config,
     get_config_path,
+    get_data_path,
     create_default_config,
 )
 from src.install import get_hook_status
@@ -80,7 +81,7 @@ def get_autocapture_status() -> str:
 
     # Get capture statistics
     try:
-        cortex_data = Path.home() / ".cortex"
+        cortex_data = get_data_path()
         captured_file = cortex_data / "captured_sessions.json"
         hook_log = cortex_data / "hook.log"
 

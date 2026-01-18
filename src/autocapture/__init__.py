@@ -18,6 +18,13 @@ from .significance import (
     calculate_significance,
     is_significant,
 )
+from .queue_processor import (
+    QueueProcessor,
+    get_processor,
+    start_processor,
+    stop_processor,
+    trigger_processing,
+)
 
 __all__ = [
     # Transcript parsing
@@ -31,4 +38,10 @@ __all__ = [
     "SignificanceConfig",
     "calculate_significance",
     "is_significant",
+    # Queue processing
+    "QueueProcessor",
+    "get_processor",
+    "start_processor",
+    "stop_processor",
+    "trigger_processing",
 ]
