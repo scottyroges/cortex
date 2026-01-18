@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from logging_config import get_logger
+from src.tools.initiative_utils import calculate_duration, calculate_duration_from_now, find_initiative
 from src.tools.services import get_collection
 
 logger = get_logger("tools.recall")
@@ -184,7 +185,7 @@ def summarize_initiative(
         collection = get_collection()
 
         # Find the initiative
-        init_data = _find_initiative(collection, repository, initiative)
+        init_data = find_initiative(collection, repository, initiative)
         if not init_data:
             return json.dumps({
                 "error": f"Initiative '{initiative}' not found",
@@ -253,8 +254,13 @@ def summarize_initiative(
                 "summary": item["content"][:300] + "..." if len(item["content"]) > 300 else item["content"],
             })
 
-        # Calculate duration
-        duration = _calculate_initiative_duration(init_meta)
+        # Calculate duration (use completed_at if available, otherwise now)
+        created_at = init_meta.get("created_at", "")
+        completed_at = init_meta.get("completed_at")
+        if completed_at:
+            duration = calculate_duration(created_at, completed_at)
+        else:
+            duration = calculate_duration_from_now(created_at)
 
         # Build narrative summary
         narrative = _build_narrative(init_meta, items, commit_count, note_count)
@@ -287,71 +293,6 @@ def summarize_initiative(
     except Exception as e:
         logger.error(f"Summarize initiative error: {e}")
         return json.dumps({"status": "error", "error": str(e)})
-
-
-def _find_initiative(collection, repository: Optional[str], initiative: str) -> Optional[dict]:
-    """Find an initiative by ID or name."""
-    # Try direct ID lookup first
-    if initiative.startswith("initiative:"):
-        result = collection.get(
-            ids=[initiative],
-            include=["documents", "metadatas"],
-        )
-        if result["ids"]:
-            return {
-                "id": result["ids"][0],
-                "document": result["documents"][0],
-                "metadata": result["metadatas"][0],
-            }
-
-    # Search by name
-    where_filter = {"$and": [{"type": "initiative"}, {"name": initiative}]}
-    if repository:
-        where_filter["$and"].append({"repository": repository})
-
-    result = collection.get(
-        where=where_filter,
-        include=["documents", "metadatas"],
-    )
-
-    if result["ids"]:
-        return {
-            "id": result["ids"][0],
-            "document": result["documents"][0],
-            "metadata": result["metadatas"][0],
-        }
-
-    return None
-
-
-def _calculate_initiative_duration(meta: dict) -> str:
-    """Calculate human-readable duration of initiative."""
-    try:
-        created_at = meta.get("created_at", "")
-        end_at = meta.get("completed_at") or datetime.now(timezone.utc).isoformat()
-
-        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-        end = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
-        delta = end - created
-
-        days = delta.days
-        if days == 0:
-            hours = delta.seconds // 3600
-            if hours == 0:
-                return "less than 1 hour"
-            return f"{hours} hour{'s' if hours != 1 else ''}"
-        elif days == 1:
-            return "1 day"
-        elif days < 7:
-            return f"{days} days"
-        elif days < 30:
-            weeks = days // 7
-            return f"{weeks} week{'s' if weeks != 1 else ''}"
-        else:
-            months = days // 30
-            return f"{months} month{'s' if months != 1 else ''}"
-    except Exception:
-        return "unknown"
 
 
 def _build_narrative(meta: dict, items: list, commit_count: int, note_count: int) -> str:

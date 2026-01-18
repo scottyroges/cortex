@@ -16,44 +16,12 @@ from pydantic import BaseModel
 
 from logging_config import get_logger
 from src.config import get_data_path
-from src.search import HybridSearcher, RerankerService
+from src.http.resources import get_collection, get_reranker, get_searcher
 from src.security import scrub_secrets
-from src.storage import get_chroma_client, get_or_create_collection
 
 logger = get_logger("http.api")
 
 router = APIRouter()
-
-# Lazy-initialized resources
-_client = None
-_collection = None
-_searcher = None
-_reranker = None
-
-
-def get_collection():
-    """Get or create the ChromaDB collection."""
-    global _client, _collection
-    if _collection is None:
-        _client = get_chroma_client()
-        _collection = get_or_create_collection(_client)
-    return _collection
-
-
-def get_searcher():
-    """Get or create the hybrid searcher."""
-    global _searcher
-    if _searcher is None:
-        _searcher = HybridSearcher(get_collection())
-    return _searcher
-
-
-def get_reranker():
-    """Get or create the reranker."""
-    global _reranker
-    if _reranker is None:
-        _reranker = RerankerService()
-    return _reranker
 
 
 # --- Request/Response Models ---

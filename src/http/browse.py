@@ -12,8 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from logging_config import get_logger
-from src.search import HybridSearcher, RerankerService
-from src.storage import get_chroma_client, get_or_create_collection
+from src.http.resources import get_collection, get_reranker, get_searcher
 
 logger = get_logger("http.browse")
 
@@ -35,38 +34,6 @@ EDITABLE_FIELDS = {
     "insight": {"title", "content", "tags", "files"},
     "commit": {"content", "files"},
 }
-
-
-# Lazy-initialized resources
-_client = None
-_collection = None
-_searcher = None
-_reranker = None
-
-
-def get_collection():
-    """Get or create the ChromaDB collection."""
-    global _client, _collection
-    if _collection is None:
-        _client = get_chroma_client()
-        _collection = get_or_create_collection(_client)
-    return _collection
-
-
-def get_searcher():
-    """Get or create the hybrid searcher."""
-    global _searcher
-    if _searcher is None:
-        _searcher = HybridSearcher(get_collection())
-    return _searcher
-
-
-def get_reranker():
-    """Get or create the reranker."""
-    global _reranker
-    if _reranker is None:
-        _reranker = RerankerService()
-    return _reranker
 
 
 @router.get("/stats")

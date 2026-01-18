@@ -16,6 +16,7 @@ from src.git import get_current_branch, get_head_commit
 from src.ingest import ingest_files
 from src.ingest.walker import compute_file_hash
 from src.security import scrub_secrets
+from src.tools.initiative_utils import find_initiative, resolve_initiative
 from src.tools.services import CONFIG, get_anthropic, get_collection, get_repo_path, get_searcher
 
 logger = get_logger("tools.notes")
@@ -65,28 +66,9 @@ def save_note_to_cortex(
         timestamp = datetime.now(timezone.utc).isoformat()
 
         # Get initiative tagging
-        initiative_id = None
-        initiative_name = None
-
-        if initiative:
-            # Explicit initiative specified
-            if initiative.startswith("initiative:"):
-                initiative_id = initiative
-                # Look up the name
-                from src.tools.initiatives import _find_initiative
-                init_data = _find_initiative(collection, repo, initiative)
-                if init_data:
-                    initiative_name = init_data["metadata"].get("name", "")
-            else:
-                # Assume it's a name, look up the ID
-                from src.tools.initiatives import _find_initiative
-                init_data = _find_initiative(collection, repo, initiative)
-                if init_data:
-                    initiative_id = init_data["id"]
-                    initiative_name = init_data["metadata"].get("name", "")
-        else:
-            # Use focused initiative
-            initiative_id, initiative_name = _get_focused_initiative_info(repo)
+        initiative_id, initiative_name = resolve_initiative(
+            collection, repo, initiative, _get_focused_initiative_info
+        )
 
         # Build document text
         doc_text = ""
@@ -188,27 +170,9 @@ def commit_to_cortex(
         timestamp = datetime.now(timezone.utc).isoformat()
 
         # Get initiative tagging
-        initiative_id = None
-        initiative_name = None
-
-        if initiative:
-            # Explicit initiative specified
-            if initiative.startswith("initiative:"):
-                initiative_id = initiative
-                from src.tools.initiatives import _find_initiative
-                init_data = _find_initiative(collection, repo, initiative)
-                if init_data:
-                    initiative_name = init_data["metadata"].get("name", "")
-            else:
-                # Assume it's a name, look up the ID
-                from src.tools.initiatives import _find_initiative
-                init_data = _find_initiative(collection, repo, initiative)
-                if init_data:
-                    initiative_id = init_data["id"]
-                    initiative_name = init_data["metadata"].get("name", "")
-        else:
-            # Use focused initiative
-            initiative_id, initiative_name = _get_focused_initiative_info(repo)
+        initiative_id, initiative_name = resolve_initiative(
+            collection, repo, initiative, _get_focused_initiative_info
+        )
 
         # Get current commit for staleness tracking
         current_commit = get_head_commit(repo_path) if repo_path else None
@@ -360,27 +324,9 @@ def insight_to_cortex(
         timestamp = datetime.now(timezone.utc).isoformat()
 
         # Get initiative tagging
-        initiative_id = None
-        initiative_name = None
-
-        if initiative:
-            # Explicit initiative specified
-            if initiative.startswith("initiative:"):
-                initiative_id = initiative
-                from src.tools.initiatives import _find_initiative
-                init_data = _find_initiative(collection, repo, initiative)
-                if init_data:
-                    initiative_name = init_data["metadata"].get("name", "")
-            else:
-                # Assume it's a name, look up the ID
-                from src.tools.initiatives import _find_initiative
-                init_data = _find_initiative(collection, repo, initiative)
-                if init_data:
-                    initiative_id = init_data["id"]
-                    initiative_name = init_data["metadata"].get("name", "")
-        else:
-            # Use focused initiative
-            initiative_id, initiative_name = _get_focused_initiative_info(repo)
+        initiative_id, initiative_name = resolve_initiative(
+            collection, repo, initiative, _get_focused_initiative_info
+        )
 
         # Build document text
         doc_text = ""

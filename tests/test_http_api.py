@@ -18,44 +18,36 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def api_client(temp_chroma_client):
     """Create a test client for the HTTP API."""
-    # Reset module-level caches before patching
-    import src.http.api as api_module
-    api_module._client = None
-    api_module._collection = None
-    api_module._searcher = None
-    api_module._reranker = None
+    from src.http.resources import reset_resources
 
-    # Patch the ChromaDB client
-    with patch("src.http.api.get_chroma_client", return_value=temp_chroma_client):
+    # Reset the ResourceManager singleton before patching
+    reset_resources()
+
+    # Patch the ChromaDB client in the resources module
+    with patch("src.http.resources.get_chroma_client", return_value=temp_chroma_client):
         from src.http import app
         client = TestClient(app)
         yield client
 
     # Reset after test
-    api_module._client = None
-    api_module._collection = None
-    api_module._searcher = None
-    api_module._reranker = None
+    reset_resources()
 
 
 @pytest.fixture
 def browse_client(temp_chroma_client):
     """Create a test client for the browse API with patched ChromaDB."""
-    import src.http.browse as browse_module
-    browse_module._client = None
-    browse_module._collection = None
-    browse_module._searcher = None
-    browse_module._reranker = None
+    from src.http.resources import reset_resources
 
-    with patch("src.http.browse.get_chroma_client", return_value=temp_chroma_client):
+    # Reset the ResourceManager singleton before patching
+    reset_resources()
+
+    with patch("src.http.resources.get_chroma_client", return_value=temp_chroma_client):
         from src.http import app
         client = TestClient(app)
         yield client
 
-    browse_module._client = None
-    browse_module._collection = None
-    browse_module._searcher = None
-    browse_module._reranker = None
+    # Reset after test
+    reset_resources()
 
 
 class TestSearchEndpoint:

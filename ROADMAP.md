@@ -135,7 +135,8 @@ Cortex fills this gap by storing:
 
 | Feature | Description | Value |
 |---------|-------------|-------|
-| **Type-Based Scoring** | Boost insights (2x) and notes (1.5x) over code chunks in search results. | Understanding surfaces before implementation |
+| **Type-Based Scoring** | Boost insights (2x), notes (1.5x), commits (1.5x) over code chunks. Implement in `src/tools/search.py`. | Understanding surfaces before implementation |
+| **Conditional Index Rebuild** | Don't rebuild BM25 index on every query. Cache index state, rebuild only when collection changes. | Performance: currently always rebuilds at `api.py:170` |
 | **Document Type Filter** | Add `types` parameter to `search_cortex`. Enable notes-only search for "why" questions. | Skip code noise entirely |
 | **Skeleton + Memory Mode** | Option to skip code indexing entirely. Index only skeleton + semantic memory. | 10-100x smaller index, higher signal |
 
@@ -145,6 +146,53 @@ Cortex fills this gap by storing:
 |---------|-------------|-------|
 | **Importance Scoring** | Analyze git frequency + import centrality. Rank results by importance. | High-impact files surface first |
 | **Entry Point Detection** | Auto-detect main/index files. Flag as navigation starting points. | Reduce onboarding friction |
+
+---
+
+## Code Quality Initiative 🔄
+
+*Address technical debt identified in Jan 2026 codebase analysis. See `initiative:0c2e3f0d`.*
+
+### Critical Fixes
+
+| Issue | Location | Fix |
+|-------|----------|-----|
+| **Queue processor non-atomic writes** | `src/autocapture/queue_processor.py:105-106` | Use tempfile + rename pattern from `state.py` |
+| **Migration no rollback** | `src/migrations/runner.py:128-137` | Backup before each migration, restore on failure |
+
+### Code Duplication Elimination
+
+| Duplication | Files Affected | Solution |
+|-------------|----------------|----------|
+| **Resource initialization** (~80 lines) | `api.py`, `browse.py` | Create `src/http/resources.py` with thread-safe ResourceManager |
+| **Subprocess patterns** (~40 lines) | `git/detection.py`, `git/delta.py` | Create `src/git/subprocess_utils.py` |
+| **Initiative resolution** (3x) | `notes.py` lines 71-89, 194-211, 366-380 | Extract `InitiativeResolver` class |
+| **`_find_initiative`** | `initiatives.py`, `recall.py` | Create `src/tools/initiative_utils.py` |
+
+### Function Complexity
+
+| Function | Lines | Target |
+|----------|-------|--------|
+| `search_cortex` | 279 | Extract `SearchPipeline` class |
+| `ingest_codebase` | 206 | Strategy pattern for delta sync |
+| `orient_session` | 177 | Extract `RepositoryContext` class |
+| `parse_transcript_jsonl` | ~100 | Extract block parsing helpers |
+
+### Test Coverage Expansion
+
+| Module | Current | Target |
+|--------|---------|--------|
+| Auto-capture | ~5 tests | ~25 tests (transcript parsing, LLM fallback, hook resilience) |
+| Performance | 0 tests | Latency benchmarks, large codebase tests |
+| E2E workflow | 0 tests | Orient → Ingest → Search → Commit flow |
+
+### Lower Priority
+
+| Item | Description |
+|------|-------------|
+| **Exception hierarchy** | Create `src/exceptions.py` with `CortexError` base class |
+| **HTTP client standardization** | Migrate urllib to requests/httpx across all providers |
+| **Configuration extraction** | Move hardcoded values (timeouts, thresholds) to config.yaml |
 
 ---
 

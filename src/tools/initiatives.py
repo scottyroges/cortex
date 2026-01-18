@@ -13,6 +13,7 @@ from typing import Optional
 
 from logging_config import get_logger
 from src.git import get_current_branch
+from src.tools.initiative_utils import calculate_duration, find_initiative
 from src.tools.services import get_collection, get_repo_path, get_searcher
 
 logger = get_logger("tools.initiatives")
@@ -224,7 +225,7 @@ def focus_initiative(
         timestamp = datetime.now(timezone.utc).isoformat()
 
         # Find the initiative
-        init_data = _find_initiative(collection, repository, initiative)
+        init_data = find_initiative(collection, repository, initiative)
         if not init_data:
             return json.dumps({
                 "error": f"Initiative '{initiative}' not found in repository '{repository}'",
@@ -291,7 +292,7 @@ def complete_initiative(
         timestamp = datetime.now(timezone.utc).isoformat()
 
         # Find the initiative
-        init_data = _find_initiative(collection, repository, initiative)
+        init_data = find_initiative(collection, repository, initiative)
         if not init_data:
             return json.dumps({
                 "error": f"Initiative '{initiative}' not found",
@@ -332,7 +333,7 @@ def complete_initiative(
 
         # Calculate duration
         created_at = meta.get("created_at", "")
-        duration = _calculate_duration(created_at, timestamp)
+        duration = calculate_duration(created_at, timestamp)
 
         # Rebuild search index
         get_searcher().build_index()
@@ -411,43 +412,8 @@ def _clear_focus(collection, repository: str) -> None:
         logger.warning(f"Failed to clear focus: {e}")
 
 
-def _find_initiative(
-    collection,
-    repository: Optional[str],
-    initiative: str,
-) -> Optional[dict]:
-    """Find an initiative by ID or name."""
-    # Try direct ID lookup first
-    if initiative.startswith("initiative:"):
-        result = collection.get(
-            ids=[initiative],
-            include=["documents", "metadatas"],
-        )
-        if result["ids"]:
-            return {
-                "id": result["ids"][0],
-                "document": result["documents"][0],
-                "metadata": result["metadatas"][0],
-            }
-
-    # Search by name
-    where_filter = {"$and": [{"type": "initiative"}, {"name": initiative}]}
-    if repository:
-        where_filter["$and"].append({"repository": repository})
-
-    result = collection.get(
-        where=where_filter,
-        include=["documents", "metadatas"],
-    )
-
-    if result["ids"]:
-        return {
-            "id": result["ids"][0],
-            "document": result["documents"][0],
-            "metadata": result["metadatas"][0],
-        }
-
-    return None
+# Backwards compatibility alias
+_find_initiative = find_initiative
 
 
 def _count_initiative_items(collection, initiative_id: str) -> tuple[int, int]:
@@ -511,31 +477,8 @@ def _get_recent_context(collection, initiative_id: str, limit: int = 5) -> list:
     return context
 
 
-def _calculate_duration(created_at: str, completed_at: str) -> str:
-    """Calculate human-readable duration between timestamps."""
-    try:
-        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-        completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
-        delta = completed - created
-
-        days = delta.days
-        if days == 0:
-            hours = delta.seconds // 3600
-            if hours == 0:
-                return "less than 1 hour"
-            return f"{hours} hour{'s' if hours != 1 else ''}"
-        elif days == 1:
-            return "1 day"
-        elif days < 7:
-            return f"{days} days"
-        elif days < 30:
-            weeks = days // 7
-            return f"{weeks} week{'s' if weeks != 1 else ''}"
-        else:
-            months = days // 30
-            return f"{months} month{'s' if months != 1 else ''}"
-    except Exception:
-        return "unknown"
+# Backwards compatibility alias
+_calculate_duration = calculate_duration
 
 
 def get_focused_initiative(repository: str) -> Optional[dict]:
