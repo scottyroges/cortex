@@ -934,3 +934,192 @@ class TestQueueProcessorModuleFunctions:
 
         # Should not raise
         queue_processor.trigger_processing()
+
+
+# =============================================================================
+# Sync/Async Mode Tests
+# =============================================================================
+
+
+class TestSyncAsyncConfig:
+    """Tests for auto_commit_async configuration."""
+
+    def test_default_config_async_true(self):
+        """Default config has auto_commit_async=True."""
+        from src.config import DEFAULT_CONFIG_YAML
+
+        assert "auto_commit_async: true" in DEFAULT_CONFIG_YAML
+
+    def test_default_config_sync_timeout(self):
+        """Default config has sync_timeout=60."""
+        from src.config import DEFAULT_CONFIG_YAML
+
+        assert "sync_timeout: 60" in DEFAULT_CONFIG_YAML
+
+    def test_get_autocapture_status_includes_async_setting(self):
+        """get_autocapture_status includes auto_commit_async."""
+        from src.tools.autocapture import get_autocapture_status
+
+        status = json.loads(get_autocapture_status())
+        assert "auto_commit_async" in status["config"]
+        assert "sync_timeout" in status["config"]
+
+    @patch("src.tools.autocapture.load_yaml_config")
+    @patch("src.tools.autocapture.save_yaml_config")
+    @patch("src.tools.autocapture.create_default_config")
+    def test_configure_autocapture_async_setting(
+        self, mock_create, mock_save, mock_load
+    ):
+        """configure_autocapture can set auto_commit_async."""
+        from src.tools.autocapture import configure_autocapture
+
+        mock_load.return_value = {"autocapture": {}, "llm": {}}
+        mock_save.return_value = True
+
+        result = json.loads(configure_autocapture(auto_commit_async=False))
+
+        assert result["status"] == "success"
+        assert "auto_commit_async=False" in result["changes"]
+
+    @patch("src.tools.autocapture.load_yaml_config")
+    @patch("src.tools.autocapture.save_yaml_config")
+    @patch("src.tools.autocapture.create_default_config")
+    def test_configure_autocapture_sync_timeout(
+        self, mock_create, mock_save, mock_load
+    ):
+        """configure_autocapture can set sync_timeout."""
+        from src.tools.autocapture import configure_autocapture
+
+        mock_load.return_value = {"autocapture": {}, "llm": {}}
+        mock_save.return_value = True
+
+        result = json.loads(configure_autocapture(sync_timeout=90))
+
+        assert result["status"] == "success"
+        assert "sync_timeout=90" in result["changes"]
+
+    @patch("src.tools.autocapture.load_yaml_config")
+    def test_configure_autocapture_sync_timeout_validation(self, mock_load):
+        """configure_autocapture validates sync_timeout range."""
+        from src.tools.autocapture import configure_autocapture
+
+        mock_load.return_value = {"autocapture": {}, "llm": {}}
+
+        # Too low
+        result = json.loads(configure_autocapture(sync_timeout=5))
+        assert result["status"] == "error"
+        assert "10 and 300" in result["error"]
+
+        # Too high
+        result = json.loads(configure_autocapture(sync_timeout=500))
+        assert result["status"] == "error"
+        assert "10 and 300" in result["error"]
+
+
+class TestProcessSyncEndpoint:
+    """Tests for /process-sync API endpoint."""
+
+    def test_process_sync_empty_transcript(self):
+        """process_sync skips empty transcripts."""
+        from src.http.api import ProcessSyncRequest, process_sync
+
+        request = ProcessSyncRequest(
+            session_id="test-1",
+            transcript_text="",
+            files_edited=[],
+            repository="test",
+        )
+        result = process_sync(request)
+
+        assert result["status"] == "skipped"
+        assert result["reason"] == "empty transcript"
+
+    def test_process_sync_whitespace_transcript(self):
+        """process_sync skips whitespace-only transcripts."""
+        from src.http.api import ProcessSyncRequest, process_sync
+
+        request = ProcessSyncRequest(
+            session_id="test-1",
+            transcript_text="   \n\t  ",
+            files_edited=[],
+            repository="test",
+        )
+        result = process_sync(request)
+
+        assert result["status"] == "skipped"
+
+    @patch("src.config.load_yaml_config")
+    @patch("src.llm.get_provider")
+    def test_process_sync_no_provider(self, mock_get_provider, mock_load_config):
+        """process_sync returns error when no LLM provider."""
+        from src.http.api import ProcessSyncRequest, process_sync
+
+        mock_load_config.return_value = {}
+        mock_get_provider.return_value = None
+
+        request = ProcessSyncRequest(
+            session_id="test-1",
+            transcript_text="User: Hello\nAssistant: Hi",
+            files_edited=[],
+            repository="test",
+        )
+        result = process_sync(request)
+
+        assert result["status"] == "error"
+        assert "No LLM provider" in result["error"]
+
+    @patch("src.config.load_yaml_config")
+    @patch("src.llm.get_provider")
+    def test_process_sync_success(self, mock_get_provider, mock_load_config):
+        """process_sync succeeds with mocked dependencies."""
+        from src.http.api import ProcessSyncRequest, process_sync, commit_session
+
+        mock_load_config.return_value = {}
+        mock_provider = MagicMock()
+        mock_provider.summarize_session.return_value = "Test summary"
+        mock_get_provider.return_value = mock_provider
+
+        request = ProcessSyncRequest(
+            session_id="test-1",
+            transcript_text="User: Hello\nAssistant: Hi there",
+            files_edited=["/a.py", "/b.py"],
+            repository="test-repo",
+        )
+
+        # Mock commit_session at module level
+        with patch.object(
+            __import__("src.http.api", fromlist=["commit_session"]),
+            "commit_session",
+            return_value={"status": "success", "commit_id": "test-commit"},
+        ) as mock_commit:
+            result = process_sync(request)
+
+            assert result["status"] == "success"
+            assert result["session_id"] == "test-1"
+            assert result["summary_length"] == len("Test summary")
+            mock_provider.summarize_session.assert_called_once()
+            mock_commit.assert_called_once()
+
+    @patch("src.config.load_yaml_config")
+    @patch("src.llm.get_provider")
+    def test_process_sync_summarization_error(
+        self, mock_get_provider, mock_load_config
+    ):
+        """process_sync returns error when summarization fails."""
+        from src.http.api import ProcessSyncRequest, process_sync
+
+        mock_load_config.return_value = {}
+        mock_provider = MagicMock()
+        mock_provider.summarize_session.side_effect = Exception("LLM error")
+        mock_get_provider.return_value = mock_provider
+
+        request = ProcessSyncRequest(
+            session_id="test-1",
+            transcript_text="User: Hello",
+            files_edited=[],
+            repository="test",
+        )
+        result = process_sync(request)
+
+        assert result["status"] == "error"
+        assert "Summarization failed" in result["error"]

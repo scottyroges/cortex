@@ -45,9 +45,12 @@ def get_autocapture_status() -> str:
     # Load configuration
     try:
         config = load_yaml_config()
+        autocapture_config = config.get("autocapture", {})
         result["config"] = {
-            "autocapture_enabled": config.get("autocapture", {}).get("enabled", True),
-            "significance_thresholds": config.get("autocapture", {}).get("significance", {}),
+            "autocapture_enabled": autocapture_config.get("enabled", True),
+            "auto_commit_async": autocapture_config.get("auto_commit_async", True),
+            "sync_timeout": autocapture_config.get("sync_timeout", 60),
+            "significance_thresholds": autocapture_config.get("significance", {}),
             "llm_primary_provider": config.get("llm", {}).get("primary_provider", "claude-cli"),
             "config_path": str(get_config_path()),
             "config_exists": get_config_path().exists(),
@@ -108,6 +111,8 @@ def get_autocapture_status() -> str:
 def configure_autocapture(
     enabled: Optional[bool] = None,
     llm_provider: Optional[str] = None,
+    auto_commit_async: Optional[bool] = None,
+    sync_timeout: Optional[int] = None,
     min_tokens: Optional[int] = None,
     min_file_edits: Optional[int] = None,
     min_tool_calls: Optional[int] = None,
@@ -120,6 +125,9 @@ def configure_autocapture(
     Args:
         enabled: Enable or disable auto-capture
         llm_provider: Primary LLM provider (anthropic, ollama, openrouter, claude-cli)
+        auto_commit_async: When true (default), hook exits fast and daemon processes
+            in background. When false, hook waits for LLM summary + commit to complete.
+        sync_timeout: Timeout in seconds for sync mode (default: 60)
         min_tokens: Minimum token threshold for significant sessions
         min_file_edits: Minimum file edit threshold
         min_tool_calls: Minimum tool call threshold
@@ -159,6 +167,19 @@ def configure_autocapture(
             })
         config["llm"]["primary_provider"] = llm_provider
         changes.append(f"llm_provider={llm_provider}")
+
+    if auto_commit_async is not None:
+        config["autocapture"]["auto_commit_async"] = auto_commit_async
+        changes.append(f"auto_commit_async={auto_commit_async}")
+
+    if sync_timeout is not None:
+        if sync_timeout < 10 or sync_timeout > 300:
+            return json.dumps({
+                "status": "error",
+                "error": "sync_timeout must be between 10 and 300 seconds",
+            })
+        config["autocapture"]["sync_timeout"] = sync_timeout
+        changes.append(f"sync_timeout={sync_timeout}")
 
     if min_tokens is not None:
         config["autocapture"]["significance"]["min_tokens"] = min_tokens

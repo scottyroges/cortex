@@ -427,3 +427,77 @@ def process_queue() -> dict[str, Any]:
     return {
         "status": "triggered",
     }
+
+
+class ProcessSyncRequest(BaseModel):
+    """Request body for synchronous session processing."""
+    session_id: str
+    transcript_text: str
+    files_edited: list[str] = []
+    repository: str = "global"
+
+
+@router.post("/process-sync")
+def process_sync(request: ProcessSyncRequest) -> dict[str, Any]:
+    """
+    Process a session synchronously.
+
+    Unlike /process-queue which just triggers async processing,
+    this endpoint does the LLM summarization and commit immediately
+    and returns the result. Used by the hook when auto_commit_async=false.
+
+    Args:
+        session_id: Session identifier
+        transcript_text: Full transcript text for summarization
+        files_edited: List of files edited in the session
+        repository: Repository name (default: "global")
+
+    Returns:
+        Result with status, summary length, and commit info
+    """
+    from src.config import load_yaml_config
+    from src.llm import get_provider
+
+    logger.info(f"Processing session synchronously: {request.session_id}")
+
+    if not request.transcript_text or not request.transcript_text.strip():
+        return {"status": "skipped", "reason": "empty transcript"}
+
+    # Get LLM provider
+    try:
+        config = load_yaml_config()
+        provider = get_provider(config)
+        if provider is None:
+            return {"status": "error", "error": "No LLM provider available"}
+    except Exception as e:
+        logger.error(f"Failed to get LLM provider: {e}")
+        return {"status": "error", "error": f"No LLM provider: {e}"}
+
+    # Generate summary
+    try:
+        # Limit transcript to 100k chars
+        transcript_text = request.transcript_text[:100000]
+        summary = provider.summarize_session(transcript_text)
+        if not summary:
+            return {"status": "error", "error": "Summarization returned empty result"}
+    except Exception as e:
+        logger.error(f"Summarization failed: {e}")
+        return {"status": "error", "error": f"Summarization failed: {e}"}
+
+    # Commit to Cortex using the existing commit endpoint logic
+    try:
+        commit_result = commit_session(CommitRequest(
+            summary=summary,
+            changed_files=request.files_edited,
+            repository=request.repository,
+        ))
+        logger.info(f"Session committed synchronously: {request.session_id}")
+        return {
+            "status": "success",
+            "session_id": request.session_id,
+            "summary_length": len(summary),
+            "commit_result": commit_result,
+        }
+    except Exception as e:
+        logger.error(f"Commit failed: {e}")
+        return {"status": "error", "error": f"Commit failed: {e}"}

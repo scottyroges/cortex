@@ -364,6 +364,13 @@ autocapture:
   # Enable auto-capture on session end
   enabled: true
 
+  # Async mode (default): hook exits fast, daemon processes in background
+  # Sync mode: hook waits for LLM summary + commit to complete (10-30s delay)
+  auto_commit_async: true
+
+  # Timeout for sync mode in seconds (how long hook waits before fallback)
+  sync_timeout: 60
+
   # Significance thresholds (session is significant if ANY threshold is met)
   significance:
     min_tokens: 5000         # Minimum token count

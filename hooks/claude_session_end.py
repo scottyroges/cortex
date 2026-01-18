@@ -308,7 +308,7 @@ def notify_daemon():
     """
     try:
         req = urllib.request.Request(
-            f"{CORTEX_API_URL}/api/process-queue",
+            f"{CORTEX_API_URL}/process-queue",
             method="POST",
             headers={"Content-Type": "application/json"},
         )
@@ -317,6 +317,64 @@ def notify_daemon():
     except Exception:
         # Daemon not running or slow - that's fine, queue will be processed later
         pass
+
+
+def process_sync(
+    session_id: str,
+    transcript: dict,
+    repository: str,
+    config: dict,
+) -> bool:
+    """
+    Process session synchronously by calling daemon's /process-sync endpoint.
+
+    Waits for LLM summarization and commit to complete before returning.
+    Falls back to False if daemon is unavailable or times out.
+
+    Args:
+        session_id: Session identifier
+        transcript: Parsed transcript dict with 'text' and 'files_edited'
+        repository: Repository name
+        config: Cortex config dict
+
+    Returns:
+        True if successfully processed, False if should fall back to async queue
+    """
+    sync_timeout = config.get("autocapture", {}).get("sync_timeout", 60)
+
+    payload = {
+        "session_id": session_id,
+        "transcript_text": transcript["text"],
+        "files_edited": transcript["files_edited"],
+        "repository": repository,
+    }
+
+    try:
+        req = urllib.request.Request(
+            f"{CORTEX_API_URL}/process-sync",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        response = urllib.request.urlopen(req, timeout=sync_timeout)
+        result = json.loads(response.read().decode("utf-8"))
+
+        if result.get("status") == "success":
+            log(f"Sync processing succeeded: summary_length={result.get('summary_length')}")
+            return True
+        else:
+            log(f"Sync processing returned non-success: {result.get('error', result.get('reason', 'unknown'))}", "WARNING")
+            return False
+
+    except urllib.error.URLError as e:
+        log(f"Sync processing failed (daemon unavailable?): {e}", "WARNING")
+        return False
+    except TimeoutError:
+        log(f"Sync processing timed out after {sync_timeout}s", "WARNING")
+        return False
+    except Exception as e:
+        log(f"Sync processing failed: {e}", "WARNING")
+        return False
 
 
 def detect_repository(project_path: str) -> str:
@@ -391,20 +449,46 @@ def main():
     # Detect repository
     repository = detect_repository(transcript["project_path"] or cwd)
 
-    # Queue session for async processing (fast - no LLM call)
-    if queue_session_for_processing(
-        session_id=session_id,
-        transcript_text=transcript["text"],
-        files_edited=transcript["files_edited"],
-        repository=repository,
-    ):
-        log(f"Session queued for async processing: {repository}")
-        mark_session_captured(session_id)
+    # Check sync/async mode
+    auto_commit_async = config.get("autocapture", {}).get("auto_commit_async", True)
 
-        # Notify daemon to process queue (fire-and-forget)
-        notify_daemon()
+    if auto_commit_async:
+        # Async mode (default): queue and exit fast
+        if queue_session_for_processing(
+            session_id=session_id,
+            transcript_text=transcript["text"],
+            files_edited=transcript["files_edited"],
+            repository=repository,
+        ):
+            log(f"Session queued for async processing: {repository}")
+            mark_session_captured(session_id)
+
+            # Notify daemon to process queue (fire-and-forget)
+            notify_daemon()
+        else:
+            log("Failed to queue session", "ERROR")
     else:
-        log("Failed to queue session", "ERROR")
+        # Sync mode: wait for LLM summary + commit to complete
+        log(f"Processing session synchronously (auto_commit_async=false)")
+
+        success = process_sync(session_id, transcript, repository, config)
+
+        if success:
+            mark_session_captured(session_id)
+        else:
+            # Fallback: queue for async processing if sync failed
+            log("Sync processing failed, falling back to async queue")
+            if queue_session_for_processing(
+                session_id=session_id,
+                transcript_text=transcript["text"],
+                files_edited=transcript["files_edited"],
+                repository=repository,
+            ):
+                log(f"Session queued for async processing (fallback): {repository}")
+                mark_session_captured(session_id)
+                notify_daemon()
+            else:
+                log("Failed to queue session for fallback", "ERROR")
 
     return 0
 

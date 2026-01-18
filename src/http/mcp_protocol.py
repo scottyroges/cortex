@@ -424,6 +424,14 @@ MCP_TOOL_SCHEMAS = [
                     "enum": ["anthropic", "ollama", "openrouter", "claude-cli"],
                     "description": "Primary LLM provider for summarization",
                 },
+                "auto_commit_async": {
+                    "type": "boolean",
+                    "description": "When true (default), hook exits fast and daemon processes in background. When false, hook waits for LLM summary + commit to complete.",
+                },
+                "sync_timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds for sync mode (default: 60, range: 10-300)",
+                },
                 "min_tokens": {
                     "type": "integer",
                     "description": "Minimum token threshold for significant sessions",
