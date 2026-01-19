@@ -1203,3 +1203,201 @@ class TestTypeScriptExtractorRegistry:
         extractor = get_extractor("typescript")
         assert extractor is not None
         assert extractor.language == "typescript"
+
+
+# =============================================================================
+# Phase 5: Kotlin Extractor Tests
+# =============================================================================
+
+from src.ast.extractors.kotlin import KotlinExtractor
+
+
+class TestKotlinExtractorImports:
+    """Test Kotlin import extraction."""
+
+    def setup_method(self):
+        self.extractor = KotlinExtractor()
+        self.parser = get_parser()
+
+    def test_simple_import(self):
+        source = "import kotlinx.coroutines.flow.Flow"
+        tree = self.parser.parse(source, "kotlin")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 1
+        assert imports[0].module == "kotlinx.coroutines.flow.Flow"
+        assert imports[0].is_external
+
+    def test_multiple_imports(self):
+        source = """
+import com.example.models.User
+import kotlinx.coroutines.launch
+"""
+        tree = self.parser.parse(source, "kotlin")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 2
+
+
+class TestKotlinExtractorDataContracts:
+    """Test Kotlin data contract extraction."""
+
+    def setup_method(self):
+        self.extractor = KotlinExtractor()
+        self.parser = get_parser()
+
+    def test_data_class_contract(self):
+        source = """
+data class User(
+    val id: String,
+    val name: String,
+    val email: String? = null
+)
+"""
+        tree = self.parser.parse(source, "kotlin")
+        contracts = self.extractor.extract_data_contracts(tree, source)
+
+        assert len(contracts) == 1
+        contract = contracts[0]
+        assert contract.name == "User"
+        assert contract.contract_type == "dataclass"
+        assert len(contract.fields) == 3
+        assert contract.fields[0].name == "id"
+        assert contract.fields[2].name == "email"
+        assert contract.fields[2].optional
+
+    def test_sealed_class_contract(self):
+        source = """
+sealed class Result<out T>
+"""
+        tree = self.parser.parse(source, "kotlin")
+        contracts = self.extractor.extract_data_contracts(tree, source)
+
+        assert len(contracts) == 1
+        assert contracts[0].name == "Result"
+        assert contracts[0].contract_type == "sealed_class"
+
+    def test_interface_contract(self):
+        source = """
+interface UserRepository {
+    suspend fun getUser(id: String): User?
+}
+"""
+        tree = self.parser.parse(source, "kotlin")
+        contracts = self.extractor.extract_data_contracts(tree, source)
+
+        assert len(contracts) == 1
+        assert contracts[0].name == "UserRepository"
+        assert contracts[0].contract_type == "interface"
+
+
+class TestKotlinExtractorFunctions:
+    """Test Kotlin function extraction."""
+
+    def setup_method(self):
+        self.extractor = KotlinExtractor()
+        self.parser = get_parser()
+
+    def test_simple_function(self):
+        source = """
+fun greet(name: String): String {
+    return "Hello, $name!"
+}
+"""
+        tree = self.parser.parse(source, "kotlin")
+        functions = self.extractor.extract_functions(tree, source)
+
+        assert len(functions) == 1
+        func = functions[0]
+        assert func.name == "greet"
+        assert func.return_type == "String"
+        assert len(func.parameters) == 1
+        assert func.parameters[0].name == "name"
+
+    def test_suspend_function(self):
+        source = """
+suspend fun fetchData(url: String): Response {
+    return client.get(url)
+}
+"""
+        tree = self.parser.parse(source, "kotlin")
+        functions = self.extractor.extract_functions(tree, source)
+
+        assert len(functions) == 1
+        assert functions[0].is_async  # suspend = async
+
+    def test_main_function(self):
+        source = """
+fun main() {
+    println("Hello")
+}
+"""
+        tree = self.parser.parse(source, "kotlin")
+        functions = self.extractor.extract_functions(tree, source)
+
+        assert len(functions) == 1
+        assert functions[0].name == "main"
+
+
+class TestKotlinExtractorClasses:
+    """Test Kotlin class extraction."""
+
+    def setup_method(self):
+        self.extractor = KotlinExtractor()
+        self.parser = get_parser()
+
+    def test_simple_class(self):
+        source = """
+class UserService(private val repo: UserRepository) {
+    suspend fun findUser(id: String): User? {
+        return repo.getUser(id)
+    }
+}
+"""
+        tree = self.parser.parse(source, "kotlin")
+        classes = self.extractor.extract_classes(tree, source)
+
+        assert len(classes) == 1
+        cls = classes[0]
+        assert cls.name == "UserService"
+        assert len(cls.methods) == 1
+        assert cls.methods[0].name == "findUser"
+        assert cls.methods[0].is_async
+
+    def test_data_class(self):
+        source = """
+data class Point(val x: Int, val y: Int)
+"""
+        tree = self.parser.parse(source, "kotlin")
+        classes = self.extractor.extract_classes(tree, source)
+
+        assert len(classes) == 1
+        assert classes[0].is_dataclass
+
+
+class TestKotlinExtractorEntryPoints:
+    """Test Kotlin entry point detection."""
+
+    def setup_method(self):
+        self.extractor = KotlinExtractor()
+        self.parser = get_parser()
+
+    def test_main_function_entry(self):
+        source = """
+fun main(args: Array<String>) {
+    println("Hello")
+}
+"""
+        tree = self.parser.parse(source, "kotlin")
+        entry_type = self.extractor.detect_entry_point(tree, source, "Main.kt")
+
+        assert entry_type == "main"
+
+
+class TestKotlinExtractorRegistry:
+    """Test that Kotlin extractor is registered."""
+
+    def test_get_kotlin_extractor(self):
+        extractor = get_extractor("kotlin")
+        assert extractor is not None
+        assert extractor.language == "kotlin"

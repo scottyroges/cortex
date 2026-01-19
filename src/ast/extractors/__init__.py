@@ -9,6 +9,7 @@ from src.ast.extractors.base import LanguageExtractor, get_extractor, register_e
 # Import extractors to trigger registration
 from src.ast.extractors.python import PythonExtractor
 from src.ast.extractors.typescript import TypeScriptExtractor
+from src.ast.extractors.kotlin import KotlinExtractor
 
 __all__ = [
     "LanguageExtractor",
@@ -16,4 +17,5 @@ __all__ = [
     "register_extractor",
     "PythonExtractor",
     "TypeScriptExtractor",
+    "KotlinExtractor",
 ]
