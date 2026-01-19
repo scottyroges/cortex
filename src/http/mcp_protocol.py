@@ -93,6 +93,20 @@ MCP_TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "get_ingest_status",
+        "description": "Get the status of an async ingestion task. Use this to poll progress after ingest_code_into_cortex returns a task_id for async operations (full reindex or large delta).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "Task ID returned by ingest_code_into_cortex for async operations",
+                },
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
         "name": "session_summary_to_cortex",
         "description": "Save a session summary and re-index changed files. IMPORTANT: Write a comprehensive summary that captures the FULL context of this session, including: (1) What was implemented/changed and WHY, (2) Key architectural decisions made, (3) Problems encountered and how they were solved, (4) Non-obvious patterns or gotchas discovered, (5) Future work or TODOs identified. This summary will be retrieved in future sessions to restore context, so include enough detail to resume this work months later.",
         "inputSchema": {
@@ -473,6 +487,7 @@ def _get_tool_map():
         summarize_initiative,
         validate_insight,
     )
+    from src.tools.ingest import get_ingest_status
     from src.tools.autocapture import (
         get_autocapture_status,
         configure_autocapture,
@@ -481,6 +496,7 @@ def _get_tool_map():
         "orient_session": orient_session,
         "search_cortex": search_cortex,
         "ingest_code_into_cortex": ingest_code_into_cortex,
+        "get_ingest_status": get_ingest_status,
         "session_summary_to_cortex": session_summary_to_cortex,
         "save_note_to_cortex": save_note_to_cortex,
         "insight_to_cortex": insight_to_cortex,

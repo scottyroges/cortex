@@ -505,3 +505,68 @@ def process_sync(request: ProcessSyncRequest) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Save session summary failed: {e}")
         return {"status": "error", "error": f"Save session summary failed: {e}"}
+
+
+# --- Ingestion Status Endpoints ---
+
+
+@router.get("/ingest-status")
+def list_ingest_tasks(repository: Optional[str] = None) -> dict[str, Any]:
+    """
+    List all ingestion tasks, optionally filtered by repository.
+
+    Returns summary of active and recent tasks.
+
+    Args:
+        repository: Optional filter by repository name
+    """
+    from src.ingest.async_processor import get_worker
+
+    worker = get_worker()
+    tasks = worker._store.get_all_tasks(repository=repository)
+
+    return {
+        "tasks": [
+            {
+                "task_id": t.task_id,
+                "repository": t.repository,
+                "status": t.status,
+                "force_full": t.force_full,
+                "progress": {
+                    "files_processed": t.files_processed,
+                    "files_total": t.files_total,
+                    "percent": round(t.files_processed / t.files_total * 100, 1)
+                    if t.files_total > 0
+                    else 0,
+                },
+                "created_at": t.created_at,
+                "completed_at": t.completed_at,
+            }
+            for t in tasks
+        ]
+    }
+
+
+@router.get("/ingest-status/{task_id}")
+def get_ingest_task_status(task_id: str) -> dict[str, Any]:
+    """
+    Get detailed status of a specific ingestion task.
+
+    Returns full progress information and results if completed.
+
+    Args:
+        task_id: Task ID from ingest_code_into_cortex
+    """
+    from src.ingest.async_processor import get_worker
+
+    worker = get_worker()
+    status = worker.get_status(task_id)
+
+    if status is None:
+        return {
+            "status": "not_found",
+            "task_id": task_id,
+            "error": "Task not found or expired",
+        }
+
+    return status

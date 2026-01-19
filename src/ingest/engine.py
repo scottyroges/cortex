@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import chromadb
 
@@ -22,6 +22,12 @@ from src.state import load_state, migrate_state, save_state
 from src.storage.gc import cleanup_state_entries, delete_file_chunks
 
 logger = get_logger("ingest.engine")
+
+# Progress callback: (files_processed, files_total, docs_created) -> None
+ProgressCallback = Callable[[int, int, int], None]
+
+# Progress update interval (every N files)
+PROGRESS_BATCH_SIZE = 10
 
 
 # =============================================================================
@@ -269,9 +275,15 @@ class MetadataFileProcessor:
         self,
         files: list[Path],
         file_hashes: dict[str, str],
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> tuple[int, int, int, list[dict]]:
         """
         Process files using metadata extraction.
+
+        Args:
+            files: List of file paths to process
+            file_hashes: Dict to store/update file hashes
+            progress_callback: Optional callback for progress reporting
 
         Returns:
             Tuple of (processed_count, skipped_count, docs_created, errors)
@@ -287,8 +299,9 @@ class MetadataFileProcessor:
         docs_created = 0
         errors = []
         results = []
+        total_files = len(files)
 
-        for file_path in files:
+        for i, file_path in enumerate(files):
             try:
                 result = ingest_file_metadata(
                     file_path=file_path,
@@ -322,6 +335,12 @@ class MetadataFileProcessor:
                 errors.append({"file": str(file_path), "error": str(e)})
                 skipped += 1
 
+            # Report progress every PROGRESS_BATCH_SIZE files or on last file
+            if progress_callback and (
+                (i + 1) % PROGRESS_BATCH_SIZE == 0 or i == total_files - 1
+            ):
+                progress_callback(i + 1, total_files, docs_created)
+
         # Build dependency graph after all files processed
         if results:
             dep_count = build_dependencies(
@@ -349,6 +368,7 @@ def ingest_codebase(
     include_patterns: Optional[list[str]] = None,
     use_cortexignore: bool = True,
     llm_provider_instance: Optional[LLMProvider] = None,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> dict[str, Any]:
     """
     Ingest an entire codebase into the collection using metadata-first approach.
@@ -374,6 +394,7 @@ def ingest_codebase(
                           Patterns are relative to root_path (e.g., ["src/**", "tests/**"])
         use_cortexignore: If True, load patterns from global + project cortexignore files
         llm_provider_instance: LLMProvider instance for metadata descriptions
+        progress_callback: Optional callback for progress reporting (processed, total, docs_created)
 
     Returns:
         Stats dictionary with ingestion results
@@ -422,7 +443,7 @@ def ingest_codebase(
     )
 
     processed, skipped, docs_created, errors = processor.process_files(
-        delta_result.files_to_process, file_hashes
+        delta_result.files_to_process, file_hashes, progress_callback
     )
 
     stats["files_processed"] = processed

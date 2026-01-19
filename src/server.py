@@ -38,6 +38,7 @@ from src.tools import (
     summarize_initiative,
     validate_insight,
 )
+from src.tools.ingest import get_ingest_status
 
 # Initialize logging
 setup_logging()
@@ -57,6 +58,7 @@ mcp.tool()(search_cortex)
 
 # Ingest
 mcp.tool()(ingest_code_into_cortex)
+mcp.tool()(get_ingest_status)
 
 # Notes
 mcp.tool()(save_note_to_cortex)
@@ -103,6 +105,13 @@ def start_queue_processor():
     logger.info("Queue processor started")
 
 
+def start_ingestion_worker():
+    """Start the async ingestion worker in a background thread."""
+    from src.ingest.async_processor import start_worker
+    start_worker()
+    logger.info("Ingestion worker started")
+
+
 def main():
     """Main entry point for the MCP server."""
     # Parse command line arguments
@@ -120,8 +129,9 @@ def main():
     if enable_http:
         start_http_server()
 
-    # Always start the queue processor for async auto-capture
+    # Always start background processors
     start_queue_processor()
+    start_ingestion_worker()
 
     logger.info("Starting Cortex MCP server")
     mcp.run()
