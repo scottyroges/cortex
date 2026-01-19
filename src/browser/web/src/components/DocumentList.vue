@@ -6,6 +6,8 @@ import TypeBadge from './TypeBadge.vue'
 
 const props = defineProps<{
   stats: Stats | null
+  typeFilter: string | null
+  repoFilter: string | null
 }>()
 
 const emit = defineEmits<{
@@ -17,27 +19,52 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedId = ref<string | null>(null)
 
-const typeFilter = ref('')
-const repoFilter = ref('')
+// Sort state
+type SortField = 'created_at' | 'updated_at' | 'title' | 'id'
+const sortBy = ref<SortField>('created_at')
+const sortOrder = ref<'asc' | 'desc'>('desc')
 
-const typeOptions = computed(() => {
-  if (!props.stats) return []
-  return Object.keys(props.stats.by_type)
+// Computed sorted documents
+const sortedDocuments = computed(() => {
+  const docs = [...documents.value]
+  const reverse = sortOrder.value === 'desc'
+
+  docs.sort((a, b) => {
+    let aVal: string
+    let bVal: string
+
+    if (sortBy.value === 'created_at') {
+      aVal = a.created_at || ''
+      bVal = b.created_at || ''
+    } else if (sortBy.value === 'updated_at') {
+      aVal = a.updated_at || a.created_at || ''
+      bVal = b.updated_at || b.created_at || ''
+    } else if (sortBy.value === 'title') {
+      aVal = (a.title || a.id).toLowerCase()
+      bVal = (b.title || b.id).toLowerCase()
+    } else {
+      aVal = a.id
+      bVal = b.id
+    }
+
+    return reverse ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal)
+  })
+
+  return docs
 })
 
-const repoOptions = computed(() => {
-  if (!props.stats) return []
-  return Object.keys(props.stats.by_repository)
-})
+function toggleSortOrder() {
+  sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc'
+}
 
 async function loadDocuments() {
   loading.value = true
   error.value = null
   try {
     documents.value = await client.listDocuments({
-      doc_type: typeFilter.value || undefined,
-      repository: repoFilter.value || undefined,
-      limit: 100,
+      doc_type: props.typeFilter || undefined,
+      repository: props.repoFilter || undefined,
+      limit: 500,
     })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load documents'
@@ -70,7 +97,7 @@ function formatTime(dateStr?: string): string {
   }
 }
 
-watch([typeFilter, repoFilter], loadDocuments)
+watch([() => props.typeFilter, () => props.repoFilter], loadDocuments)
 onMounted(loadDocuments)
 
 defineExpose({ refresh: loadDocuments })
@@ -78,19 +105,27 @@ defineExpose({ refresh: loadDocuments })
 
 <template>
   <div class="card h-full flex flex-col">
-    <div class="p-3 border-b border-gray-700 flex gap-2">
-      <select v-model="typeFilter" class="select flex-1 text-sm">
-        <option value="">All Types</option>
-        <option v-for="type in typeOptions" :key="type" :value="type">
-          {{ type }}
-        </option>
+    <!-- Sort controls -->
+    <div class="p-3 border-b border-gray-700 flex items-center gap-2">
+      <span class="text-xs text-gray-400">Sort:</span>
+      <select v-model="sortBy" class="select flex-1 text-sm">
+        <option value="created_at">Created</option>
+        <option value="updated_at">Updated</option>
+        <option value="title">Title</option>
+        <option value="id">ID</option>
       </select>
-      <select v-model="repoFilter" class="select flex-1 text-sm">
-        <option value="">All Repos</option>
-        <option v-for="repo in repoOptions" :key="repo" :value="repo">
-          {{ repo }}
-        </option>
-      </select>
+      <button
+        @click="toggleSortOrder"
+        class="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-gray-200"
+        :title="sortOrder === 'desc' ? 'Descending (newest first)' : 'Ascending (oldest first)'"
+      >
+        <svg v-if="sortOrder === 'desc'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+        <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
     </div>
 
     <div class="flex-1 overflow-auto">
@@ -98,13 +133,13 @@ defineExpose({ refresh: loadDocuments })
 
       <div v-else-if="error" class="p-4 text-red-400 text-sm">{{ error }}</div>
 
-      <div v-else-if="documents.length === 0" class="p-4 text-gray-500 text-sm">
+      <div v-else-if="sortedDocuments.length === 0" class="p-4 text-gray-500 text-sm">
         No documents found
       </div>
 
       <ul v-else class="divide-y divide-gray-700">
         <li
-          v-for="doc in documents"
+          v-for="doc in sortedDocuments"
           :key="doc.id"
           class="px-3 py-2 hover:bg-gray-750 cursor-pointer transition-colors"
           :class="{ 'bg-gray-700': selectedId === doc.id }"

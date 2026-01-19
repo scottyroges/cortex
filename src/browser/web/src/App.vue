@@ -13,6 +13,18 @@ const connected = ref(true)
 const loading = ref(true)
 const documentListRef = ref<InstanceType<typeof DocumentList> | null>(null)
 
+// Filter state (controlled by StatsPanel, consumed by DocumentList)
+const typeFilter = ref<string | null>(null)
+const repoFilter = ref<string | null>(null)
+
+function onFilterType(type: string | null) {
+  typeFilter.value = type
+}
+
+function onFilterRepo(repo: string | null) {
+  repoFilter.value = repo
+}
+
 async function loadStats() {
   try {
     stats.value = await client.getStats()
@@ -99,7 +111,12 @@ onMounted(loadStats)
     <div v-else class="flex-1 flex overflow-hidden">
       <!-- Left Sidebar: Stats -->
       <aside class="w-56 flex-shrink-0 border-r border-gray-700 overflow-auto">
-        <StatsPanel :stats="stats" />
+        <StatsPanel
+          :active-type-filter="typeFilter"
+          :active-repo-filter="repoFilter"
+          @filter-type="onFilterType"
+          @filter-repo="onFilterRepo"
+        />
       </aside>
 
       <!-- Main Area -->
@@ -108,7 +125,13 @@ onMounted(loadStats)
         <div class="flex-1 flex overflow-hidden">
           <!-- Document List -->
           <div class="w-80 flex-shrink-0 border-r border-gray-700">
-            <DocumentList ref="documentListRef" :stats="stats" @select="onSelectDocument" />
+            <DocumentList
+              ref="documentListRef"
+              :stats="stats"
+              :type-filter="typeFilter"
+              :repo-filter="repoFilter"
+              @select="onSelectDocument"
+            />
           </div>
 
           <!-- Document Detail -->
