@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.tools.recall import recall_recent_work, summarize_initiative
+from src.tools.recall import recall_recent_work
+from src.tools.initiatives import summarize_initiative
 
 
 @pytest.fixture
@@ -22,11 +23,13 @@ def temp_db_dir():
 @pytest.fixture
 def mock_collection(temp_db_dir):
     """Set up ChromaDB with test data."""
-    with patch("src.tools.recall.get_collection") as mock_get:
-        import chromadb
-        client = chromadb.PersistentClient(path=temp_db_dir)
-        collection = client.get_or_create_collection("cortex_memory")
-        mock_get.return_value = collection
+    import chromadb
+    client = chromadb.PersistentClient(path=temp_db_dir)
+    collection = client.get_or_create_collection("cortex_memory")
+
+    # Patch get_collection in all modules that use it
+    with patch("src.tools.recall.get_collection", return_value=collection), \
+         patch("src.tools.initiatives.get_collection", return_value=collection):
         yield collection
 
 

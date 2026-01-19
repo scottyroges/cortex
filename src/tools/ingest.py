@@ -12,11 +12,11 @@ Supports both sync and async modes:
 import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from logging_config import get_logger
 from src.git import get_current_branch
-from src.ingest import ingest_codebase
+from src.ingest import ingest_codebase as _ingest_codebase_engine
 from src.ingest.engine import select_delta_strategy
 from src.llm import get_provider
 from src.tools.services import CONFIG, get_collection, get_searcher
@@ -27,7 +27,48 @@ logger = get_logger("tools.ingest")
 ASYNC_FILE_THRESHOLD = 50
 
 
-def ingest_code_into_cortex(
+def ingest_codebase(
+    action: Literal["ingest", "status"] = "ingest",
+    path: Optional[str] = None,
+    repository: Optional[str] = None,
+    force_full: bool = False,
+    include_patterns: Optional[list[str]] = None,
+    use_cortexignore: bool = True,
+    task_id: Optional[str] = None,
+) -> str:
+    """
+    Ingest a codebase or check ingestion status.
+
+    **When to use this tool:**
+    - First time indexing a codebase? action="ingest"
+    - Updating index after code changes? action="ingest"
+    - Checking async ingestion progress? action="status" with task_id
+
+    Args:
+        action: "ingest" to index code, "status" to check async task
+        path: Codebase root path (required for action="ingest")
+        repository: Repository identifier (defaults to directory name)
+        force_full: Force full re-ingestion
+        include_patterns: Glob patterns for selective ingestion
+        use_cortexignore: Use .cortexignore files (default: True)
+        task_id: Task ID for status check (required for action="status")
+
+    Returns:
+        JSON with ingestion stats or async task status
+    """
+    if action == "ingest":
+        if not path:
+            return json.dumps({"error": "path is required for action='ingest'"})
+        return _ingest(path, repository, force_full, include_patterns, use_cortexignore)
+    elif action == "status":
+        if not task_id:
+            return json.dumps({"error": "task_id is required for action='status'"})
+        return _get_status(task_id)
+    else:
+        return json.dumps({"error": f"Unknown action: {action}. Valid actions: 'ingest', 'status'"})
+
+
+def _ingest(
     path: str,
     repository: Optional[str] = None,
     force_full: bool = False,
@@ -193,7 +234,7 @@ def _run_sync_ingestion(
             except Exception as e:
                 logger.warning(f"Could not get LLM provider for metadata descriptions: {e}")
 
-        stats = ingest_codebase(
+        stats = _ingest_codebase_engine(
             root_path=path,
             collection=collection,
             repo_id=repository,
@@ -228,19 +269,8 @@ def _run_sync_ingestion(
         })
 
 
-def get_ingest_status(task_id: str) -> str:
-    """
-    Get the status of an async ingestion task.
-
-    Returns progress information including files processed, total, and completion status.
-    Use this to poll the status of an async ingestion task started by ingest_code_into_cortex.
-
-    Args:
-        task_id: Task ID returned by ingest_code_into_cortex for async operations
-
-    Returns:
-        JSON with task status, progress, and results (if completed)
-    """
+def _get_status(task_id: str) -> str:
+    """Get the status of an async ingestion task (internal implementation)."""
     from src.ingest.async_processor import get_worker
 
     worker = get_worker()
@@ -254,3 +284,22 @@ def get_ingest_status(task_id: str) -> str:
         })
 
     return json.dumps(status, indent=2)
+
+
+# --- Backward Compatibility Aliases (for tests and internal use) ---
+# These aliases are NOT exported via __all__ but can be imported directly
+
+def ingest_code_into_cortex(
+    path: str,
+    repository: Optional[str] = None,
+    force_full: bool = False,
+    include_patterns: Optional[list[str]] = None,
+    use_cortexignore: bool = True,
+) -> str:
+    """Backward-compatible alias for _ingest."""
+    return _ingest(path, repository, force_full, include_patterns, use_cortexignore)
+
+
+def get_ingest_status(task_id: str) -> str:
+    """Backward-compatible alias for _get_status."""
+    return _get_status(task_id)

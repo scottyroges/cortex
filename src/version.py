@@ -31,7 +31,7 @@ def get_current_version() -> dict:
     return {
         "git_commit": os.environ.get("CORTEX_GIT_COMMIT", "unknown"),
         "build_time": os.environ.get("CORTEX_BUILD_TIME", "unknown"),
-        "version": "1.10.0",
+        "version": "2.0.0",
     }
 
 

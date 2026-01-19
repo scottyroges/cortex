@@ -274,7 +274,7 @@ class TestInitiativeLifecycle:
             list_initiatives,
         )
         from src.tools.notes import session_summary_to_cortex, save_note_to_cortex
-        from src.tools.recall import summarize_initiative
+        from src.tools.initiatives import summarize_initiative
         from src.tools.search import search_cortex
 
         reset_services()

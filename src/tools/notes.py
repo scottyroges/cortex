@@ -13,7 +13,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Literal, Optional, TYPE_CHECKING
 
 from logging_config import get_logger
 from src.git import get_current_branch, get_head_commit
@@ -40,7 +40,53 @@ def _get_focused_initiative_info(repository: str) -> tuple[Optional[str], Option
     return None, None
 
 
-def save_note_to_cortex(
+def save_memory(
+    content: str,
+    kind: Literal["note", "insight"],
+    title: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    repository: Optional[str] = None,
+    initiative: Optional[str] = None,
+    files: Optional[list[str]] = None,
+) -> str:
+    """
+    Save understanding to Cortex memory.
+
+    **When to use this tool:**
+    - Discovered a pattern or gotcha? kind="insight", link to files
+    - Making an architectural decision? kind="note"
+    - Documenting a non-obvious behavior? kind="insight"
+    - Recording a learning for future sessions? kind="note"
+
+    Args:
+        content: The content to save (note text or insight analysis)
+        kind: Type of memory - "note" for decisions/docs, "insight" for file-linked analysis
+        title: Optional title
+        tags: Optional categorization tags
+        repository: Repository identifier (defaults to "global")
+        initiative: Initiative to tag (uses focused if not specified)
+        files: File paths this insight is about (REQUIRED for kind="insight")
+
+    Returns:
+        JSON with saved memory ID and status
+    """
+    if kind == "note":
+        return _save_note(content, title, tags, repository, initiative)
+    elif kind == "insight":
+        if not files:
+            return json.dumps({
+                "status": "error",
+                "error": "files parameter is required when kind='insight'",
+            })
+        return _save_insight(content, files, title, tags, repository, initiative)
+    else:
+        return json.dumps({
+            "status": "error",
+            "error": f"Unknown kind: {kind}. Valid kinds: 'note', 'insight'",
+        })
+
+
+def _save_note(
     content: str,
     title: Optional[str] = None,
     tags: Optional[list[str]] = None,
@@ -140,29 +186,30 @@ def save_note_to_cortex(
         })
 
 
-def session_summary_to_cortex(
+def conclude_session(
     summary: str,
     changed_files: list[str],
     repository: Optional[str] = None,
     initiative: Optional[str] = None,
 ) -> str:
     """
-    Save a session summary to Cortex memory.
+    Save end-of-session summary to Cortex memory.
 
-    Use this at the end of a coding session to capture decisions,
-    context, and understanding that would otherwise be lost.
+    **When to use this tool:**
+    - Ending a coding session and want to preserve context
+    - Capturing decisions, problems solved, and understanding
+    - Recording what files changed and why
 
-    Note: Changed files are recorded but not re-indexed. Use ingest_code_into_cortex
-    to update the codebase index when files have significantly changed.
+    Call this BEFORE ending the session to ensure context is captured.
 
     Args:
-        summary: Summary of the session/changes made
+        summary: Detailed summary of what was done and why
         changed_files: List of file paths that were modified
         repository: Repository identifier
-        initiative: Initiative ID/name to tag (uses focused initiative if not specified)
+        initiative: Initiative to tag (uses focused if not specified)
 
     Returns:
-        JSON with session summary status and initiative info
+        JSON with session summary status
     """
     repo = repository or "global"
 
@@ -274,7 +321,7 @@ def _update_initiative_timestamp(collection, initiative_id: str, timestamp: str)
         logger.warning(f"Failed to update initiative timestamp: {e}")
 
 
-def insight_to_cortex(
+def _save_insight(
     insight: str,
     files: list[str],
     title: Optional[str] = None,
@@ -282,29 +329,7 @@ def insight_to_cortex(
     repository: Optional[str] = None,
     initiative: Optional[str] = None,
 ) -> str:
-    """
-    Save architectural insights linked to specific code files.
-
-    Use this tool proactively when you've done significant code analysis
-    and want to preserve your understanding. Examples:
-    - "This module uses the observer pattern for event handling"
-    - "The auth flow has a race condition when tokens expire"
-    - "These 3 files form the core data pipeline"
-
-    Insights are linked to files so future searches return both code AND
-    your previous analysis - solving "I figured this out last week but forgot."
-
-    Args:
-        insight: The analysis/understanding to save
-        files: List of file paths this insight is about (REQUIRED, non-empty)
-        title: Optional title for the insight
-        tags: Optional list of tags for categorization
-        repository: Repository identifier (auto-detected if not provided)
-        initiative: Initiative ID/name to tag (uses focused initiative if not specified)
-
-    Returns:
-        JSON with insight ID and save status
-    """
+    """Save an insight to Cortex memory (internal implementation)."""
     # Validate files is non-empty
     if not files:
         return json.dumps({
@@ -504,7 +529,7 @@ def validate_insight(
                 linked_files = json.loads(meta.get("files", "[]"))
                 tags = json.loads(meta.get("tags", "[]"))
 
-                new_result_json = insight_to_cortex(
+                new_result_json = _save_insight(
                     insight=replacement_insight,
                     files=linked_files,
                     title=meta.get("title", "") + " (Updated)" if meta.get("title") else None,
@@ -562,3 +587,39 @@ def validate_insight(
             "status": "error",
             "error": str(e),
         })
+
+
+# --- Backward Compatibility Aliases (for tests and internal use) ---
+# These aliases are NOT exported via __all__ but can be imported directly
+
+def insight_to_cortex(
+    insight: str,
+    files: list[str],
+    title: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    repository: Optional[str] = None,
+    initiative: Optional[str] = None,
+) -> str:
+    """Backward-compatible alias for _save_insight."""
+    return _save_insight(insight, files, title, tags, repository, initiative)
+
+
+def save_note_to_cortex(
+    content: str,
+    title: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    repository: Optional[str] = None,
+    initiative: Optional[str] = None,
+) -> str:
+    """Backward-compatible alias for _save_note."""
+    return _save_note(content, title, tags, repository, initiative)
+
+
+def session_summary_to_cortex(
+    summary: str,
+    changed_files: list[str],
+    repository: Optional[str] = None,
+    initiative: Optional[str] = None,
+) -> str:
+    """Backward-compatible alias for conclude_session."""
+    return conclude_session(summary, changed_files, repository, initiative)

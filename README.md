@@ -172,46 +172,47 @@ This shows the daemon's git commit vs your local HEAD. If they differ, run `cort
 
 You can also check from within a Claude Code session using `orient_session` - it now includes `update_available: true` when your local code is newer than the running daemon.
 
-## MCP Tools
+## MCP Tools (10 Consolidated)
 
-### Core Tools
+### Session & Search
 
 | Tool | Description |
 |------|-------------|
+| `orient_session` | Entry point for sessions - returns index status, context, initiatives, and update availability |
 | `search_cortex` | Search memory with hybrid retrieval + reranking |
-| `ingest_code_into_cortex` | Index a codebase with AST chunking and delta sync |
-| `commit_to_cortex` | Save session summary + re-index changed files |
-| `save_note_to_cortex` | Store notes, decisions, or documentation |
+| `recall_recent_work` | Timeline view of recent work. Answers "What did I work on this week?" |
 
-### Context Tools
+### Memory Storage
 
 | Tool | Description |
 |------|-------------|
-| `set_repo_context` | Set static tech stack info for a repository (e.g., "Python, FastAPI, PostgreSQL") |
-| `get_context_from_cortex` | Retrieve tech stack and initiative context |
+| `save_memory` | Save notes or insights. Use `kind="note"` for decisions/docs, `kind="insight"` for file-linked analysis |
+| `conclude_session` | End-of-session summary with changed files. Captures context for next session |
+| `validate_insight` | Verify stale insights against current code. Deprecate if invalid, optionally create replacement |
 
-### Initiative Tools
-
-| Tool | Description |
-|------|-------------|
-| `create_initiative` | Start a new initiative (epic, migration, feature) with optional goal |
-| `list_initiatives` | List all initiatives with optional status filter (active/completed/all) |
-| `focus_initiative` | Switch focus to a different initiative |
-| `complete_initiative` | Mark initiative as done with a summary |
-
-### Recall Tools (Session Memory)
+### Initiatives
 
 | Tool | Description |
 |------|-------------|
-| `recall_recent_work` | Timeline view of recent commits/notes for a repository. Answers "What did I work on this week?" |
-| `summarize_initiative` | Generate narrative summary of an initiative's progress with timeline and stats |
-| `insight_to_cortex` | Save code analysis insights linked to specific files. Used proactively after major analysis. |
-| `validate_insight` | Verify a stale insight against current code. Deprecate if invalid, optionally create replacement. |
+| `manage_initiative` | Unified initiative management: `action="create"`, `"list"`, `"focus"`, `"complete"`, or `"summarize"` |
+
+### Ingestion & Structure
+
+| Tool | Description |
+|------|-------------|
+| `ingest_codebase` | Index codebase with AST chunking. Use `action="ingest"` or `action="status"` for async tasks |
+| `get_skeleton` | Get file tree structure for a repository |
+
+### Configuration
+
+| Tool | Description |
+|------|-------------|
+| `configure_cortex` | Unified config: runtime settings, repo tech stack (`repository` + `tech_stack`), autocapture, and `get_status=True` for system status |
 
 **Initiative Workflow:**
-- New commits and notes are automatically tagged with the focused initiative
+- New session summaries and notes are automatically tagged with the focused initiative
 - `orient_session` detects stale initiatives (inactive > 5 days) and prompts for action
-- `commit_to_cortex` detects completion signals ("done", "complete", "shipped") and prompts to close
+- `conclude_session` detects completion signals ("done", "complete", "shipped") and prompts to close
 - Completed initiatives remain searchable with recency decay
 
 **Insight Staleness Detection (Remember but Verify):**
@@ -220,31 +221,9 @@ You can also check from within a Claude Code session using `orient_session` - it
 - Claude should re-read linked files before trusting stale insights
 - Use `validate_insight` to mark insights as still valid (refreshes hashes) or deprecated
 
-### Session Tools
-
-| Tool | Description |
-|------|-------------|
-| `orient_session` | Entry point for sessions - returns index status, context, initiatives, and update availability |
-
-### Admin Tools
-
-| Tool | Description |
-|------|-------------|
-| `configure_cortex` | Adjust min_score, verbose mode, top_k settings |
-| `toggle_cortex` | Enable/disable for A/B testing |
-| `get_cortex_version` | Check daemon version and if rebuild is needed |
-| `get_skeleton` | Get file tree structure for a repository |
-
-### Auto-Capture Tools
-
-| Tool | Description |
-|------|-------------|
-| `get_autocapture_status` | Check hook installation, LLM providers, and capture statistics |
-| `configure_autocapture` | Configure auto-capture settings (enabled, provider, thresholds) |
-
 ## Auto-Capture
 
-Cortex automatically captures session summaries when Claude Code sessions end. No manual `commit_to_cortex` calls needed.
+Cortex automatically captures session summaries when Claude Code sessions end. No manual `conclude_session` calls needed.
 
 ### How It Works
 
@@ -546,16 +525,14 @@ Cortex/
 │   ├── server.py          # MCP server entry point
 │   ├── version.py         # Version checking and update detection
 │   ├── config.py          # Configuration (config.yaml)
-│   ├── tools/             # MCP tool implementations
+│   ├── tools/             # MCP tool implementations (10 consolidated tools)
 │   │   ├── orient.py      # orient_session (session entry point)
 │   │   ├── search.py      # search_cortex
-│   │   ├── ingest.py      # ingest_code_into_cortex
-│   │   ├── context.py     # set_repo_context, get_context
-│   │   ├── notes.py       # save_note, commit_to_cortex, insight_to_cortex
-│   │   ├── initiatives.py # create, list, focus, complete initiatives
-│   │   ├── recall.py      # recall_recent_work, summarize_initiative
-│   │   ├── autocapture.py # get_autocapture_status, configure_autocapture
-│   │   └── admin.py       # configure, toggle, get_version, get_skeleton
+│   │   ├── ingest.py      # ingest_codebase (action="ingest" or "status")
+│   │   ├── notes.py       # save_memory, conclude_session, validate_insight
+│   │   ├── initiatives.py # manage_initiative (action=create/list/focus/complete/summarize)
+│   │   ├── recall.py      # recall_recent_work
+│   │   └── admin.py       # configure_cortex, get_skeleton
 │   ├── autocapture/       # Auto-capture system
 │   │   ├── transcript.py  # JSONL transcript parsing
 │   │   ├── significance.py # Significance detection

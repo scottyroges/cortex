@@ -3,6 +3,18 @@ MCP Protocol Endpoints
 
 HTTP endpoints for MCP tool calls (daemon mode).
 Uses Pydantic models as the single source of truth for tool schemas.
+
+Consolidated tool set (10 tools):
+1. orient_session - Session entry point
+2. search_cortex - Search memory
+3. recall_recent_work - Timeline view of recent work
+4. get_skeleton - File tree structure
+5. manage_initiative - CRUD for initiatives
+6. save_memory - Save notes and insights
+7. conclude_session - End-of-session summary
+8. ingest_codebase - Code ingestion
+9. validate_insight - Validate stale insights
+10. configure_cortex - Configuration and status
 """
 
 from typing import Any, Callable, Literal, Optional
@@ -34,15 +46,17 @@ class MCPToolResult(BaseModel):
     isError: bool = False
 
 
-# --- Tool Input Models ---
+# --- Tool Input Models (10 Consolidated Tools) ---
 # These Pydantic models are the SINGLE SOURCE OF TRUTH for tool schemas.
 # The JSON Schema is auto-generated from these models.
 
 
+# 1. orient_session
 class OrientSessionInput(BaseModel):
     project_path: str = Field(..., description="Absolute path to the project repository")
 
 
+# 2. search_cortex
 class SearchCortexInput(BaseModel):
     query: str = Field(..., description="Natural language search query")
     repository: Optional[str] = Field(None, description="Repository identifier for filtering")
@@ -60,28 +74,66 @@ class SearchCortexInput(BaseModel):
     )
 
 
-class IngestCodeInput(BaseModel):
-    path: str = Field(..., description="Absolute path to codebase root")
-    repository: Optional[str] = Field(
-        None, description="Optional repository identifier (defaults to directory name)"
-    )
-    force_full: bool = Field(False, description="Force full re-ingestion")
-    include_patterns: Optional[list[str]] = Field(
-        None,
-        description="Glob patterns for selective ingestion. Only files matching at least one pattern are indexed (e.g., ['src/**', 'tests/**'])",
-    )
-    use_cortexignore: bool = Field(
-        True, description="Load ignore patterns from global ~/.cortex/cortexignore and .cortexignore files"
+# 3. recall_recent_work
+class RecallRecentWorkInput(BaseModel):
+    repository: str = Field(..., description="Repository identifier")
+    days: int = Field(7, description="Number of days to look back (default: 7)")
+    limit: int = Field(20, description="Maximum number of items to return (default: 20)")
+    include_code: bool = Field(
+        False, description="Include code changes in results (default: false, notes/session_summaries only)"
     )
 
 
-class GetIngestStatusInput(BaseModel):
-    task_id: str = Field(
-        ..., description="Task ID returned by ingest_code_into_cortex for async operations"
+# 4. get_skeleton
+class GetSkeletonInput(BaseModel):
+    repository: Optional[str] = Field(None, description="Repository name")
+
+
+# 5. manage_initiative (consolidated from create/list/focus/complete/summarize)
+class ManageInitiativeInput(BaseModel):
+    action: Literal["create", "list", "focus", "complete", "summarize"] = Field(
+        ..., description="Action to perform: create, list, focus, complete, or summarize"
+    )
+    repository: str = Field(..., description="Repository identifier (e.g., 'Cortex', 'my-app')")
+    name: Optional[str] = Field(
+        None, description="Initiative name (required for create)"
+    )
+    initiative: Optional[str] = Field(
+        None, description="Initiative ID or name (required for focus/complete/summarize)"
+    )
+    goal: Optional[str] = Field(
+        None, description="Optional goal/description (for create)"
+    )
+    auto_focus: bool = Field(
+        True, description="Whether to focus this initiative on creation (default: true)"
+    )
+    summary: Optional[str] = Field(
+        None, description="Completion summary (required for complete)"
+    )
+    status: Literal["all", "active", "completed"] = Field(
+        "all", description="Filter by status (for list): 'all', 'active', or 'completed'"
     )
 
 
-class SessionSummaryInput(BaseModel):
+# 6. save_memory (consolidated from save_note + insight)
+class SaveMemoryInput(BaseModel):
+    content: str = Field(..., description="The content to save (note text or insight analysis)")
+    kind: Literal["note", "insight"] = Field(
+        ..., description="Type of memory: 'note' for general notes, 'insight' for file-linked analysis"
+    )
+    title: Optional[str] = Field(None, description="Optional title")
+    tags: Optional[list[str]] = Field(None, description="Optional tags for categorization")
+    repository: Optional[str] = Field(None, description="Repository identifier")
+    initiative: Optional[str] = Field(
+        None, description="Initiative ID or name to tag (uses focused initiative if not specified)"
+    )
+    files: Optional[list[str]] = Field(
+        None, description="List of file paths (REQUIRED when kind='insight')"
+    )
+
+
+# 7. conclude_session (renamed from session_summary_to_cortex)
+class ConcludeSessionInput(BaseModel):
     summary: str = Field(
         ...,
         description="Detailed summary of the session: what changed, why, decisions made, problems solved, and future TODOs",
@@ -93,122 +145,31 @@ class SessionSummaryInput(BaseModel):
     )
 
 
-class SaveNoteInput(BaseModel):
-    content: str = Field(..., description="Note content")
-    title: Optional[str] = Field(None, description="Optional title")
-    tags: Optional[list[str]] = Field(None, description="Optional tags")
-    repository: Optional[str] = Field(None, description="Repository identifier")
-    initiative: Optional[str] = Field(
-        None, description="Initiative ID or name to tag (uses focused initiative if not specified)"
+# 8. ingest_codebase (consolidated from ingest + get_ingest_status)
+class IngestCodebaseInput(BaseModel):
+    action: Literal["ingest", "status"] = Field(
+        "ingest", description="Action: 'ingest' to index code, 'status' to check task progress"
     )
-
-
-class InsightInput(BaseModel):
-    insight: str = Field(..., description="The analysis/understanding to save")
-    files: list[str] = Field(..., description="List of file paths this insight is about (REQUIRED)")
-    title: Optional[str] = Field(None, description="Optional title for the insight")
-    tags: Optional[list[str]] = Field(None, description="Optional tags for categorization")
+    path: Optional[str] = Field(
+        None, description="Absolute path to codebase root (required for action='ingest')"
+    )
     repository: Optional[str] = Field(
-        None, description="Repository identifier (auto-detected if not provided)"
+        None, description="Optional repository identifier (defaults to directory name)"
     )
-    initiative: Optional[str] = Field(
-        None, description="Initiative ID or name to tag (uses focused initiative if not specified)"
-    )
-
-
-class SetRepoContextInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier (e.g., 'Cortex', 'my-app')")
-    tech_stack: str = Field(
-        ...,
-        description="Technologies, patterns, architecture description. Focus on stable structural info, not specifics that get stale.",
-    )
-
-
-class SetInitiativeInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier")
-    name: str = Field(..., description="Initiative/epic name")
-    status: Optional[str] = Field(None, description="Current state/progress (optional)")
-
-
-class CreateInitiativeInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier (e.g., 'Cortex', 'my-app')")
-    name: str = Field(
-        ..., description="Initiative name (e.g., 'Auth Migration', 'Performance Optimization')"
-    )
-    goal: Optional[str] = Field(None, description="Optional goal/description for the initiative")
-    auto_focus: bool = Field(
-        True, description="Whether to focus this initiative on creation (default: true)"
-    )
-
-
-class ListInitiativesInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier")
-    status: Literal["all", "active", "completed"] = Field(
-        "all", description="Filter by status: 'all', 'active', or 'completed'"
-    )
-
-
-class FocusInitiativeInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier")
-    initiative: str = Field(..., description="Initiative ID or name to focus")
-
-
-class CompleteInitiativeInput(BaseModel):
-    initiative: str = Field(..., description="Initiative ID or name to complete")
-    summary: str = Field(..., description="Completion summary describing what was accomplished")
-    repository: Optional[str] = Field(
-        None, description="Repository identifier (optional if using initiative ID)"
-    )
-
-
-class GetRepoContextInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier")
-
-
-class ConfigureCortexInput(BaseModel):
-    min_score: Optional[float] = Field(None, description="Minimum relevance score (0-1)")
-    verbose: Optional[bool] = Field(None, description="Enable verbose output")
-    top_k_retrieve: Optional[int] = Field(None, description="Candidates before reranking")
-    top_k_rerank: Optional[int] = Field(None, description="Results after reranking")
-    llm_provider: Optional[str] = Field(
-        None, description="LLM provider: anthropic, claude-cli, ollama, openrouter, or none"
-    )
-    recency_boost: Optional[bool] = Field(
-        None, description="Enable recency boosting for notes/session_summaries"
-    )
-    recency_half_life_days: Optional[float] = Field(
-        None, description="Days until recency boost decays to ~0.5"
-    )
-    enabled: Optional[bool] = Field(None, description="Enable or disable Cortex memory system")
-
-
-class GetSkeletonInput(BaseModel):
-    repository: Optional[str] = Field(None, description="Repository name")
-
-
-class GetCortexVersionInput(BaseModel):
-    expected_commit: Optional[str] = Field(
+    force_full: bool = Field(False, description="Force full re-ingestion")
+    include_patterns: Optional[list[str]] = Field(
         None,
-        description="Git commit hash to compare against (e.g., local HEAD). If provided, returns needs_rebuild field.",
+        description="Glob patterns for selective ingestion. Only files matching at least one pattern are indexed (e.g., ['src/**', 'tests/**'])",
+    )
+    use_cortexignore: bool = Field(
+        True, description="Load ignore patterns from global ~/.cortex/cortexignore and .cortexignore files"
+    )
+    task_id: Optional[str] = Field(
+        None, description="Task ID to check status (required for action='status')"
     )
 
 
-class RecallRecentWorkInput(BaseModel):
-    repository: str = Field(..., description="Repository identifier")
-    days: int = Field(7, description="Number of days to look back (default: 7)")
-    limit: int = Field(20, description="Maximum number of items to return (default: 20)")
-    include_code: bool = Field(
-        False, description="Include code changes in results (default: false, notes/session_summaries only)"
-    )
-
-
-class SummarizeInitiativeInput(BaseModel):
-    initiative: str = Field(..., description="Initiative ID or name")
-    repository: Optional[str] = Field(
-        None, description="Repository identifier (optional if using initiative ID)"
-    )
-
-
+# 9. validate_insight
 class ValidateInsightInput(BaseModel):
     insight_id: str = Field(..., description="The insight ID to validate (e.g., 'insight:abc123')")
     validation_result: Literal["still_valid", "partially_valid", "no_longer_valid"] = Field(
@@ -227,30 +188,50 @@ class ValidateInsightInput(BaseModel):
     repository: Optional[str] = Field(None, description="Repository identifier (optional)")
 
 
-class GetAutocaptureStatusInput(BaseModel):
-    pass  # No parameters
-
-
-class ConfigureAutocaptureInput(BaseModel):
-    enabled: Optional[bool] = Field(None, description="Enable or disable auto-capture")
-    llm_provider: Optional[Literal["anthropic", "ollama", "openrouter", "claude-cli"]] = Field(
-        None, description="Primary LLM provider for summarization"
+# 10. configure_cortex (expanded to absorb repo context + autocapture)
+class ConfigureCortexInput(BaseModel):
+    # Runtime config
+    min_score: Optional[float] = Field(None, description="Minimum relevance score (0-1)")
+    verbose: Optional[bool] = Field(None, description="Enable verbose output")
+    top_k_retrieve: Optional[int] = Field(None, description="Candidates before reranking")
+    top_k_rerank: Optional[int] = Field(None, description="Results after reranking")
+    llm_provider: Optional[str] = Field(
+        None, description="LLM provider: anthropic, claude-cli, ollama, openrouter, or none"
     )
-    auto_commit_async: Optional[bool] = Field(
-        None,
-        description="When true (default), hook exits fast and daemon processes in background. When false, hook waits for LLM summary + commit to complete.",
+    recency_boost: Optional[bool] = Field(
+        None, description="Enable recency boosting for notes/session_summaries"
     )
-    sync_timeout: Optional[int] = Field(
-        None, description="Timeout in seconds for sync mode (default: 60, range: 10-300)"
+    recency_half_life_days: Optional[float] = Field(
+        None, description="Days until recency boost decays to ~0.5"
     )
-    min_tokens: Optional[int] = Field(
+    enabled: Optional[bool] = Field(None, description="Enable or disable Cortex memory system")
+    # Repo context (absorbs set_repo_context)
+    repository: Optional[str] = Field(
+        None, description="Repository to set tech stack for (requires tech_stack)"
+    )
+    tech_stack: Optional[str] = Field(
+        None, description="Technologies, patterns, architecture description"
+    )
+    # Autocapture config (absorbs configure_autocapture)
+    autocapture_enabled: Optional[bool] = Field(None, description="Enable or disable auto-capture")
+    autocapture_llm_provider: Optional[str] = Field(
+        None, description="LLM provider for autocapture summarization"
+    )
+    autocapture_min_tokens: Optional[int] = Field(
         None, description="Minimum token threshold for significant sessions"
     )
-    min_file_edits: Optional[int] = Field(
-        None, description="Minimum file edit threshold for significant sessions"
+    autocapture_min_tool_calls: Optional[int] = Field(
+        None, description="Minimum tool call threshold"
     )
-    min_tool_calls: Optional[int] = Field(
-        None, description="Minimum tool call threshold for significant sessions"
+    autocapture_min_file_edits: Optional[int] = Field(
+        None, description="Minimum file edit threshold"
+    )
+    autocapture_async: Optional[bool] = Field(
+        None, description="Run autocapture async (default: True)"
+    )
+    # Status query (absorbs get_autocapture_status)
+    get_status: bool = Field(
+        False, description="If True, return full system status including autocapture"
     )
 
 
@@ -288,167 +269,91 @@ def _build_tool_registry() -> dict[str, ToolDef]:
     """
     Build the tool registry with lazy imports to avoid circular dependencies.
 
-    Returns a dict mapping tool names to their ToolDef.
+    Returns a dict mapping tool names to their ToolDef (10 consolidated tools).
     """
     from src.tools import (
-        session_summary_to_cortex,
-        complete_initiative,
         configure_cortex,
-        create_initiative,
-        focus_initiative,
-        get_repo_context,
-        get_cortex_version,
+        conclude_session,
         get_skeleton,
-        ingest_code_into_cortex,
-        insight_to_cortex,
-        list_initiatives,
+        ingest_codebase,
+        manage_initiative,
         orient_session,
         recall_recent_work,
-        save_note_to_cortex,
+        save_memory,
         search_cortex,
-        set_initiative,
-        set_repo_context,
-        summarize_initiative,
         validate_insight,
-    )
-    from src.tools.ingest import get_ingest_status
-    from src.tools.autocapture import (
-        get_autocapture_status,
-        configure_autocapture,
     )
 
     tools = [
+        # 1. Session entry point
         ToolDef(
             name="orient_session",
             fn=orient_session,
             input_model=OrientSessionInput,
             description="Entry point for starting a session. Returns indexed status, skeleton, tech stack, active initiative, and staleness detection.",
         ),
+        # 2. Search memory
         ToolDef(
             name="search_cortex",
             fn=search_cortex,
             input_model=SearchCortexInput,
-            description="Search the Cortex memory for relevant code, documentation, or notes.",
+            description="Search the Cortex memory for relevant code, documentation, or notes. Use preset='understanding' for notes/insights, preset='navigation' for code structure.",
         ),
+        # 3. Recent work timeline
         ToolDef(
-            name="ingest_code_into_cortex",
-            fn=ingest_code_into_cortex,
-            input_model=IngestCodeInput,
-            description="Ingest a codebase directory into Cortex memory. Extracts structured metadata (file_metadata, data_contract, entry_point, dependency) to help AI agents navigate codebases.",
+            name="recall_recent_work",
+            fn=recall_recent_work,
+            input_model=RecallRecentWorkInput,
+            description="Recall recent session summaries and notes for a repository. Returns a timeline view of recent work, grouped by day. Answers 'What did I work on this week?'",
         ),
-        ToolDef(
-            name="get_ingest_status",
-            fn=get_ingest_status,
-            input_model=GetIngestStatusInput,
-            description="Get the status of an async ingestion task. Use this to poll progress after ingest_code_into_cortex returns a task_id for async operations (full reindex or large delta).",
-        ),
-        ToolDef(
-            name="session_summary_to_cortex",
-            fn=session_summary_to_cortex,
-            input_model=SessionSummaryInput,
-            description="Save a session summary and re-index changed files. IMPORTANT: Write a comprehensive summary that captures the FULL context of this session, including: (1) What was implemented/changed and WHY, (2) Key architectural decisions made, (3) Problems encountered and how they were solved, (4) Non-obvious patterns or gotchas discovered, (5) Future work or TODOs identified. This summary will be retrieved in future sessions to restore context, so include enough detail to resume this work months later.",
-        ),
-        ToolDef(
-            name="save_note_to_cortex",
-            fn=save_note_to_cortex,
-            input_model=SaveNoteInput,
-            description="Save a note, documentation snippet, or decision to Cortex memory.",
-        ),
-        ToolDef(
-            name="insight_to_cortex",
-            fn=insight_to_cortex,
-            input_model=InsightInput,
-            description="Save architectural insights linked to specific code files. **Use this tool proactively** when you've done significant code analysis and want to preserve your understanding. Examples: 'This module uses the observer pattern', 'The auth flow has a race condition here'. Insights are linked to files so future searches return both code AND your previous analysis.",
-        ),
-        ToolDef(
-            name="set_repo_context",
-            fn=set_repo_context,
-            input_model=SetRepoContextInput,
-            description="Set static tech stack context for a repository. This context is returned by orient_session and helps Claude understand the codebase. IMPORTANT: Only include stable, structural information that won't become stale. DO include: languages, frameworks, architecture patterns, module responsibilities, design philosophy. DO NOT include: version numbers, phase/status indicators, counts (e.g., '7 modules'), dates, or anything that changes frequently.",
-        ),
-        ToolDef(
-            name="set_initiative",
-            fn=set_initiative,
-            input_model=SetInitiativeInput,
-            description="(Legacy) Set or update the current initiative/workstream for a repository. Use create_initiative instead.",
-        ),
-        ToolDef(
-            name="create_initiative",
-            fn=create_initiative,
-            input_model=CreateInitiativeInput,
-            description="Create a new initiative for a repository. Initiatives track multi-session work like epics, migrations, or features. New session summaries and notes are automatically tagged with the focused initiative.",
-        ),
-        ToolDef(
-            name="list_initiatives",
-            fn=list_initiatives,
-            input_model=ListInitiativesInput,
-            description="List all initiatives for a repository with optional status filtering.",
-        ),
-        ToolDef(
-            name="focus_initiative",
-            fn=focus_initiative,
-            input_model=FocusInitiativeInput,
-            description="Set focus to an initiative. New session summaries and notes will be tagged with this initiative.",
-        ),
-        ToolDef(
-            name="complete_initiative",
-            fn=complete_initiative,
-            input_model=CompleteInitiativeInput,
-            description="Mark an initiative as completed with a summary. The initiative and its associated session summaries/notes remain searchable but with recency decay.",
-        ),
-        ToolDef(
-            name="get_repo_context",
-            fn=get_repo_context,
-            input_model=GetRepoContextInput,
-            description="Get stored tech stack and initiative context for a repository.",
-        ),
-        ToolDef(
-            name="configure_cortex",
-            fn=configure_cortex,
-            input_model=ConfigureCortexInput,
-            description="Configure Cortex runtime settings.",
-        ),
+        # 4. File tree structure
         ToolDef(
             name="get_skeleton",
             fn=get_skeleton,
             input_model=GetSkeletonInput,
             description="Get the file tree structure for a repository.",
         ),
+        # 5. Initiative management (CRUD)
         ToolDef(
-            name="get_cortex_version",
-            fn=get_cortex_version,
-            input_model=GetCortexVersionInput,
-            description="Get Cortex daemon build and version information. Pass expected_commit to check if rebuild is needed.",
+            name="manage_initiative",
+            fn=manage_initiative,
+            input_model=ManageInitiativeInput,
+            description="Manage initiatives (multi-session work tracking). Actions: 'create' (new initiative), 'list' (show all), 'focus' (switch active), 'complete' (mark done), 'summarize' (get progress narrative).",
         ),
+        # 6. Save notes/insights
         ToolDef(
-            name="recall_recent_work",
-            fn=recall_recent_work,
-            input_model=RecallRecentWorkInput,
-            description="Recall recent session summaries and notes for a repository. Returns a timeline view of recent work, grouped by day, with initiative context. Answers 'What did I work on this week?' without manual search queries.",
+            name="save_memory",
+            fn=save_memory,
+            input_model=SaveMemoryInput,
+            description="Save knowledge to Cortex memory. Use kind='note' for general notes/decisions. Use kind='insight' for code analysis linked to specific files (files parameter required).",
         ),
+        # 7. End-of-session summary
         ToolDef(
-            name="summarize_initiative",
-            fn=summarize_initiative,
-            input_model=SummarizeInitiativeInput,
-            description="Generate a narrative summary of an initiative's progress. Gathers all session summaries and notes tagged with the initiative and synthesizes a timeline with key decisions, problems solved, and current state.",
+            name="conclude_session",
+            fn=conclude_session,
+            input_model=ConcludeSessionInput,
+            description="Save a session summary and re-index changed files. Write a comprehensive summary capturing: what changed and WHY, key decisions, problems solved, gotchas discovered, and TODOs.",
         ),
+        # 8. Code ingestion
+        ToolDef(
+            name="ingest_codebase",
+            fn=ingest_codebase,
+            input_model=IngestCodebaseInput,
+            description="Index a codebase into Cortex memory. Use action='ingest' to start indexing, action='status' to check progress of async tasks.",
+        ),
+        # 9. Validate stale insights
         ToolDef(
             name="validate_insight",
             fn=validate_insight,
             input_model=ValidateInsightInput,
-            description="Validate a stored insight against current code state. Use this after re-reading linked files to confirm whether a stale insight is still accurate. Can mark invalid insights as deprecated and optionally create a replacement.",
+            description="Validate a stored insight against current code state. Use after re-reading linked files to confirm accuracy. Can deprecate invalid insights and create replacements.",
         ),
+        # 10. Configuration and status
         ToolDef(
-            name="get_autocapture_status",
-            fn=get_autocapture_status,
-            input_model=GetAutocaptureStatusInput,
-            description="Get status of the auto-capture system including hook installation, LLM provider availability, configuration, and recent capture statistics.",
-        ),
-        ToolDef(
-            name="configure_autocapture",
-            fn=configure_autocapture,
-            input_model=ConfigureAutocaptureInput,
-            description="Configure auto-capture settings. Changes are persisted to ~/.cortex/config.yaml.",
+            name="configure_cortex",
+            fn=configure_cortex,
+            input_model=ConfigureCortexInput,
+            description="Configure Cortex settings, set repository tech stack, configure autocapture, or get system status (get_status=True).",
         ),
     ]
 

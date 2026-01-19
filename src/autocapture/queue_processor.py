@@ -126,7 +126,7 @@ class QueueProcessor:
         """
         from src.config import load_yaml_config
         from src.llm import get_provider
-        from src.tools.notes import session_summary_to_cortex
+        from src.tools.notes import conclude_session
 
         session_id = session.get("session_id", "unknown")
         transcript_text = session.get("transcript_text", "")
@@ -156,7 +156,7 @@ class QueueProcessor:
 
         # Save to Cortex
         try:
-            result = session_summary_to_cortex(
+            result = conclude_session(
                 summary=summary,
                 changed_files=files_edited,
                 repository=repository,

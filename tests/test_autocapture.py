@@ -822,9 +822,9 @@ class TestQueueProcessor:
 
     @patch("src.config.load_yaml_config")
     @patch("src.llm.get_provider")
-    @patch("src.tools.notes.session_summary_to_cortex")
+    @patch("src.tools.notes.conclude_session")
     def test_process_session_success(
-        self, mock_session_summary, mock_get_provider, mock_load_config
+        self, mock_conclude_session, mock_get_provider, mock_load_config
     ):
         """Session processing succeeds with mocked dependencies."""
         from src.autocapture.queue_processor import QueueProcessor
@@ -834,7 +834,7 @@ class TestQueueProcessor:
         mock_provider = MagicMock()
         mock_provider.summarize_session.return_value = "Test summary"
         mock_get_provider.return_value = mock_provider
-        mock_session_summary.return_value = "{}"
+        mock_conclude_session.return_value = "{}"
 
         processor = QueueProcessor()
         session = {
@@ -848,7 +848,7 @@ class TestQueueProcessor:
 
         assert result is True
         mock_provider.summarize_session.assert_called_once()
-        mock_session_summary.assert_called_once()
+        mock_conclude_session.assert_called_once()
 
     @patch("src.config.load_yaml_config")
     @patch("src.llm.get_provider")
@@ -956,64 +956,30 @@ class TestSyncAsyncConfig:
 
         assert "sync_timeout: 60" in DEFAULT_CONFIG_YAML
 
-    def test_get_autocapture_status_includes_async_setting(self):
-        """get_autocapture_status includes auto_commit_async."""
-        from src.tools.autocapture import get_autocapture_status
+    def test_configure_cortex_get_status_includes_autocapture(self):
+        """configure_cortex(get_status=True) includes autocapture config."""
+        from src.tools.admin import configure_cortex
 
-        status = json.loads(get_autocapture_status())
-        assert "auto_commit_async" in status["config"]
-        assert "sync_timeout" in status["config"]
+        status = json.loads(configure_cortex(get_status=True))
+        assert "autocapture" in status
+        assert "config" in status["autocapture"]
 
-    @patch("src.tools.autocapture.load_yaml_config")
-    @patch("src.tools.autocapture.save_yaml_config")
-    @patch("src.tools.autocapture.create_default_config")
-    def test_configure_autocapture_async_setting(
+    @patch("src.config.load_yaml_config")
+    @patch("src.config.save_yaml_config")
+    @patch("src.config.create_default_config")
+    def test_configure_cortex_autocapture_async_setting(
         self, mock_create, mock_save, mock_load
     ):
-        """configure_autocapture can set auto_commit_async."""
-        from src.tools.autocapture import configure_autocapture
+        """configure_cortex can set autocapture_async."""
+        from src.tools.admin import configure_cortex
 
-        mock_load.return_value = {"autocapture": {}, "llm": {}}
+        mock_load.return_value = {"autocapture": {"significance": {}}, "llm": {}}
         mock_save.return_value = True
 
-        result = json.loads(configure_autocapture(auto_commit_async=False))
+        result = json.loads(configure_cortex(autocapture_async=False))
 
-        assert result["status"] == "success"
-        assert "auto_commit_async=False" in result["changes"]
-
-    @patch("src.tools.autocapture.load_yaml_config")
-    @patch("src.tools.autocapture.save_yaml_config")
-    @patch("src.tools.autocapture.create_default_config")
-    def test_configure_autocapture_sync_timeout(
-        self, mock_create, mock_save, mock_load
-    ):
-        """configure_autocapture can set sync_timeout."""
-        from src.tools.autocapture import configure_autocapture
-
-        mock_load.return_value = {"autocapture": {}, "llm": {}}
-        mock_save.return_value = True
-
-        result = json.loads(configure_autocapture(sync_timeout=90))
-
-        assert result["status"] == "success"
-        assert "sync_timeout=90" in result["changes"]
-
-    @patch("src.tools.autocapture.load_yaml_config")
-    def test_configure_autocapture_sync_timeout_validation(self, mock_load):
-        """configure_autocapture validates sync_timeout range."""
-        from src.tools.autocapture import configure_autocapture
-
-        mock_load.return_value = {"autocapture": {}, "llm": {}}
-
-        # Too low
-        result = json.loads(configure_autocapture(sync_timeout=5))
-        assert result["status"] == "error"
-        assert "10 and 300" in result["error"]
-
-        # Too high
-        result = json.loads(configure_autocapture(sync_timeout=500))
-        assert result["status"] == "error"
-        assert "10 and 300" in result["error"]
+        assert result["status"] == "configured"
+        assert "autocapture_async=False" in result["changes"]
 
 
 class TestProcessSyncEndpoint:

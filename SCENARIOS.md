@@ -26,11 +26,11 @@ This document describes the primary workflows for how Claude Code interacts with
 **Context:** User wants to add a project to Cortex memory for the first time.
 
 **Flow:**
-1. `ingest_code_into_cortex(path)` - Index the codebase with AST-aware chunking
-2. `set_repo_context(repo, "Python, FastAPI, ChromaDB...")` - Set tech stack (optional but recommended)
-3. `create_initiative(repo, "Building feature X", goal="...")` - Start tracking work (optional)
+1. `ingest_codebase(path=path)` - Index the codebase with AST-aware chunking
+2. `configure_cortex(repository=repo, tech_stack="Python, FastAPI, ChromaDB...")` - Set tech stack (optional but recommended)
+3. `manage_initiative(action="create", repository=repo, name="Building feature X", goal="...")` - Start tracking work (optional)
 
-**Tools Used:** `ingest_code_into_cortex`, `set_repo_context`, `create_initiative`
+**Tools Used:** `ingest_codebase`, `configure_cortex`, `manage_initiative`
 
 ---
 
@@ -58,11 +58,11 @@ This document describes the primary workflows for how Claude Code interacts with
 
 **Flow:**
 1. `orient_session(path)` - Check staleness, see what initiative was active
-2. If `needs_reindex: true`, run `ingest_code_into_cortex(path)` to catch up
+2. If `needs_reindex: true`, run `ingest_codebase(path=path)` to catch up
 3. `search_cortex("recent session summaries")` - Find what changed
 4. `get_skeleton(repository)` - Re-orient on file structure
 
-**Tools Used:** `orient_session`, `ingest_code_into_cortex`, `search_cortex`, `get_skeleton`
+**Tools Used:** `orient_session`, `ingest_codebase`, `search_cortex`, `get_skeleton`
 
 ---
 
@@ -71,7 +71,7 @@ This document describes the primary workflows for how Claude Code interacts with
 **Context:** Claude finishes a chunk of work and wants to preserve context for next session.
 
 **Flow:**
-1. `session_summary_to_cortex(summary, changed_files, repository)` - Save detailed session summary + re-index changed files
+1. `conclude_session(summary=summary, changed_files=changed_files, repository=repository)` - Save detailed session summary
 2. If summary contains completion signals (e.g., "complete", "done", "shipped"), Claude will be prompted to mark the initiative as complete
 
 **Example Summary** (write detailed summaries that capture full context):
@@ -91,7 +91,7 @@ src/middleware.py (integrated auth check)
 TODO: Add token revocation endpoint for logout, rate limit refresh attempts
 ```
 
-**Tools Used:** `session_summary_to_cortex`
+**Tools Used:** `conclude_session`
 
 ---
 
@@ -105,9 +105,9 @@ TODO: Add token revocation endpoint for logout, rate limit refresh attempts
 - Architecture decision rationale
 
 **Flow:**
-1. `save_note_to_cortex("OAuth2 best practices: use PKCE for mobile, refresh tokens for web...", title="OAuth2 Patterns", tags=["auth", "security"])`
+1. `save_memory(content="OAuth2 best practices: use PKCE for mobile, refresh tokens for web...", kind="note", title="OAuth2 Patterns", tags=["auth", "security"])`
 
-**Tools Used:** `save_note_to_cortex`
+**Tools Used:** `save_memory`
 
 ---
 
@@ -116,12 +116,12 @@ TODO: Add token revocation endpoint for logout, rate limit refresh attempts
 **Context:** Claude needs to see current initiative or tech stack without full orientation.
 
 **Flow (context):**
-1. `get_context_from_cortex(repo)` - Get tech stack + current initiative
+1. `configure_cortex(get_status=True)` - Get system status including tech stack and current initiative
 
 **Flow (file structure):**
 1. `get_skeleton(repository)` - Get file tree for path grounding
 
-**Tools Used:** `get_context_from_cortex`, `get_skeleton`
+**Tools Used:** `configure_cortex`, `get_skeleton`
 
 ---
 
@@ -132,12 +132,12 @@ TODO: Add token revocation endpoint for logout, rate limit refresh attempts
 **Problem:** Full indexing is slow and includes irrelevant code.
 
 **Flow (selective paths):**
-1. `ingest_code_into_cortex(path, include_patterns=["services/api/**", "packages/auth/**"])` - Index only specific directories
+1. `ingest_codebase(path=path, include_patterns=["services/api/**", "packages/auth/**"])` - Index only specific directories
 
 **Flow (using cortexignore):**
 1. Create `~/.cortex/cortexignore` for global exclusions (all projects)
 2. Create `<project>/.cortexignore` for project-specific exclusions
-3. `ingest_code_into_cortex(path)` - Automatically respects both ignore files
+3. `ingest_codebase(path=path)` - Automatically respects both ignore files
 
 **Example `.cortexignore`:**
 ```
@@ -150,7 +150,7 @@ fixtures/
 test_data/
 ```
 
-**Tools Used:** `ingest_code_into_cortex`
+**Tools Used:** `ingest_codebase`
 
 ---
 
@@ -161,10 +161,10 @@ test_data/
 **Problem:** Need to track work across multiple sessions and tag session summaries/notes.
 
 **Flow:**
-1. `create_initiative(repository, "Auth Migration", goal="Migrate from session-based to JWT auth")` - Creates initiative and auto-focuses it
-2. All subsequent `session_summary_to_cortex` and `save_note_to_cortex` calls are automatically tagged with this initiative
+1. `manage_initiative(action="create", repository=repository, name="Auth Migration", goal="Migrate from session-based to JWT auth")` - Creates initiative and auto-focuses it
+2. All subsequent `conclude_session` and `save_memory` calls are automatically tagged with this initiative
 
-**Tools Used:** `create_initiative`
+**Tools Used:** `manage_initiative`
 
 ---
 
@@ -173,12 +173,12 @@ test_data/
 **Context:** User needs to context-switch to a different workstream (e.g., hotfix, another feature).
 
 **Flow:**
-1. `create_initiative(repository, "Hotfix: Login Bug")` - Creates and focuses new initiative
+1. `manage_initiative(action="create", repository=repository, name="Hotfix: Login Bug")` - Creates and focuses new initiative
 2. Work on hotfix, session summaries are tagged with "Hotfix: Login Bug"
-3. `complete_initiative("Hotfix: Login Bug", summary="Fixed race condition in auth...")` - Mark done
-4. `focus_initiative(repository, "Auth Migration")` - Return to previous work
+3. `manage_initiative(action="complete", repository=repository, initiative="Hotfix: Login Bug", summary="Fixed race condition in auth...")` - Mark done
+4. `manage_initiative(action="focus", repository=repository, initiative="Auth Migration")` - Return to previous work
 
-**Tools Used:** `create_initiative`, `complete_initiative`, `focus_initiative`
+**Tools Used:** `manage_initiative`
 
 ---
 
@@ -188,14 +188,14 @@ test_data/
 
 **Trigger 1 - Completion signal in session summary:**
 ```
-session_summary_to_cortex(summary="Auth migration complete. All tests passing...")
+conclude_session(summary="Auth migration complete. All tests passing...", changed_files=[...])
 # Response includes: initiative.completion_signal_detected = True
 # Claude asks: "Ready to mark 'Auth Migration' as complete?"
 ```
 
 **Trigger 2 - Explicit completion:**
 ```
-complete_initiative(initiative="Auth Migration", summary="Successfully migrated to JWT auth. Key changes: ...")
+manage_initiative(action="complete", repository=repository, initiative="Auth Migration", summary="Successfully migrated to JWT auth. Key changes: ...")
 ```
 
 **What happens:**
@@ -204,7 +204,7 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 - Focus cleared (no initiative focused)
 - Initiative and tagged content remain searchable with recency decay
 
-**Tools Used:** `complete_initiative`
+**Tools Used:** `manage_initiative`
 
 ---
 
@@ -226,9 +226,9 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
    }
    ```
 3. Claude asks: "You were working on 'Auth Migration' (inactive 8 days). Still working on this, or ready to complete it?"
-4. User can either continue or run `complete_initiative()` to close it out
+4. User can either continue or run `manage_initiative(action="complete", ...)` to close it out
 
-**Tools Used:** `orient_session`, `complete_initiative` (optional)
+**Tools Used:** `orient_session`, `manage_initiative` (optional)
 
 ---
 
@@ -245,10 +245,10 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 2. Results only include session summaries/notes tagged with that initiative (plus untagged code)
 
 **Flow (completed initiatives):**
-1. `list_initiatives(repository, status="completed")` - Find old initiative name
+1. `manage_initiative(action="list", repository=repository, status="completed")` - Find old initiative name
 2. `search_cortex("database schema", initiative="Postgres Migration", include_completed=True)`
 
-**Tools Used:** `search_cortex`, `list_initiatives`
+**Tools Used:** `search_cortex`, `manage_initiative`
 
 ---
 
@@ -257,7 +257,7 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 **Context:** User wants to see all initiatives for a repository.
 
 **Flow:**
-1. `list_initiatives(repository, status="all")` - See all initiatives
+1. `manage_initiative(action="list", repository=repository, status="all")` - See all initiatives
 2. Response includes:
    - Currently focused initiative
    - All active initiatives
@@ -277,7 +277,7 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 }
 ```
 
-**Tools Used:** `list_initiatives`
+**Tools Used:** `manage_initiative`
 
 ---
 
@@ -323,7 +323,7 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 **Problem:** Commits and notes are scattered; no narrative view exists.
 
 **Flow:**
-1. `summarize_initiative(initiative, repository)` - Get narrative summary with timeline
+1. `manage_initiative(action="summarize", repository=repository, initiative="Auth Migration")` - Get narrative summary with timeline
 
 **Example Response:**
 ```json
@@ -347,7 +347,7 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 }
 ```
 
-**Tools Used:** `summarize_initiative`
+**Tools Used:** `manage_initiative`
 
 ---
 
@@ -355,8 +355,8 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 
 **Context:** User needs to check Cortex status or adjust behavior.
 
-**Flow (version check):**
-1. `get_cortex_version(expected_commit)` - Check if daemon needs rebuild
+**Flow (status check):**
+1. `configure_cortex(get_status=True)` - Get full system status including version, autocapture, and config
 
 **Flow (tuning):**
 1. `configure_cortex(min_score=0.6, top_k_rerank=10)` - Adjust retrieval parameters
@@ -364,7 +364,7 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 **Flow (disable for testing):**
 1. `configure_cortex(enabled=False)` - Disable memory for A/B testing
 
-**Tools Used:** `get_cortex_version`, `configure_cortex`
+**Tools Used:** `configure_cortex`
 
 ---
 
@@ -382,19 +382,20 @@ complete_initiative(initiative="Auth Migration", summary="Successfully migrated 
 
 **Flow:**
 1. Claude analyzes code (e.g., "explain how auth works")
-2. Claude captures insight: `insight_to_cortex(insight="The auth system uses...", files=["src/auth/middleware.py", "src/auth/tokens.py"])`
+2. Claude captures insight: `save_memory(content="The auth system uses...", kind="insight", files=["src/auth/middleware.py", "src/auth/tokens.py"])`
 3. Future search for "auth" returns both code AND the insight
 
 **Example:**
 ```python
-insight_to_cortex(
-    insight="Auth uses two-phase token refresh. Access tokens expire in 15min, refresh tokens rotate on use. Key gotcha: refresh endpoint must be excluded from token validation.",
+save_memory(
+    content="Auth uses two-phase token refresh. Access tokens expire in 15min, refresh tokens rotate on use. Key gotcha: refresh endpoint must be excluded from token validation.",
+    kind="insight",
     files=["src/auth/middleware.py", "src/auth/tokens.py"],
     title="Auth Token Refresh Pattern"
 )
 ```
 
-**Tools Used:** `insight_to_cortex`
+**Tools Used:** `save_memory`
 
 ---
 
@@ -443,7 +444,7 @@ insight_to_cortex(
 | `files_deleted` | Linked files missing | Verification required |
 | `deprecated` | Explicitly marked invalid | Show replacement link |
 
-**Tools Used:** `search_cortex`, `validate_insight`, `insight_to_cortex`
+**Tools Used:** `search_cortex`, `validate_insight`, `save_memory`
 
 ---
 
@@ -451,7 +452,7 @@ insight_to_cortex(
 
 **Context:** User ends a Claude Code session after doing significant work.
 
-**Problem:** Manual `session_summary_to_cortex` requires discipline and is often forgotten.
+**Problem:** Manual `conclude_session` requires discipline and is often forgotten.
 
 **How Auto-Capture Works:**
 1. Claude Code triggers `SessionEnd` hook when session closes
@@ -480,27 +481,28 @@ autocapture:
 **Context:** User wants to verify auto-capture is working.
 
 **Flow:**
-1. `get_autocapture_status` - Returns hook status, LLM providers, and capture stats
+1. `configure_cortex(get_status=True)` - Returns full system status including autocapture info
 
-**Example Response:**
+**Example Response (autocapture section):**
 ```json
 {
-  "status": "ok",
-  "hooks": {
-    "claude_code_installed": true,
-    "hook_script_exists": true
-  },
-  "llm_providers": {
-    "available": ["claude-cli"],
-    "configured_primary": "claude-cli"
-  },
-  "statistics": {
-    "captured_sessions_count": 15
+  "autocapture": {
+    "hooks": {
+      "claude_code_installed": true,
+      "hook_script_exists": true
+    },
+    "llm_providers": {
+      "available": ["claude-cli"],
+      "configured_primary": "claude-cli"
+    },
+    "statistics": {
+      "captured_sessions_count": 15
+    }
   }
 }
 ```
 
-**Tools Used:** `get_autocapture_status`
+**Tools Used:** `configure_cortex`
 
 ---
 
@@ -509,15 +511,15 @@ autocapture:
 **Context:** User wants to adjust auto-capture thresholds or change LLM provider.
 
 **Flow (change provider):**
-1. `configure_autocapture(llm_provider="ollama")` - Switch to Ollama for summarization
+1. `configure_cortex(autocapture_llm_provider="ollama")` - Switch to Ollama for summarization
 
 **Flow (adjust thresholds):**
-1. `configure_autocapture(min_file_edits=2, min_tokens=2000)` - Capture only larger sessions
+1. `configure_cortex(autocapture_min_file_edits=2, autocapture_min_tokens=2000)` - Capture only larger sessions
 
 **Flow (disable):**
-1. `configure_autocapture(enabled=False)` - Turn off auto-capture
+1. `configure_cortex(autocapture_enabled=False)` - Turn off auto-capture
 
-**Tools Used:** `configure_autocapture`
+**Tools Used:** `configure_cortex`
 
 ---
 
@@ -526,51 +528,40 @@ autocapture:
 | Scenario | Primary Tools |
 |----------|---------------|
 | Starting session | `orient_session` |
-| First indexing | `ingest_code_into_cortex`, `set_repo_context`, `create_initiative` |
+| First indexing | `ingest_codebase`, `configure_cortex`, `manage_initiative` |
 | Searching | `search_cortex` |
-| Resuming work | `orient_session`, `ingest_code_into_cortex`, `search_cortex` |
-| Saving progress | `session_summary_to_cortex` |
-| Capturing research | `save_note_to_cortex` |
-| Quick context | `get_context_from_cortex`, `get_skeleton` |
-| Selective ingestion | `ingest_code_into_cortex` (with `include_patterns` or `.cortexignore`) |
-| Starting initiative | `create_initiative` |
-| Switching initiatives | `create_initiative`, `focus_initiative`, `complete_initiative` |
-| Completing initiative | `complete_initiative` |
-| Stale initiative | `orient_session`, `complete_initiative` |
-| Search within initiative | `search_cortex`, `list_initiatives` |
-| Managing initiatives | `list_initiatives`, `focus_initiative` |
+| Resuming work | `orient_session`, `ingest_codebase`, `search_cortex` |
+| Saving progress | `conclude_session` |
+| Capturing research | `save_memory` |
+| Quick context | `configure_cortex`, `get_skeleton` |
+| Selective ingestion | `ingest_codebase` (with `include_patterns` or `.cortexignore`) |
+| Starting initiative | `manage_initiative` |
+| Switching initiatives | `manage_initiative` |
+| Completing initiative | `manage_initiative` |
+| Stale initiative | `orient_session`, `manage_initiative` |
+| Search within initiative | `search_cortex`, `manage_initiative` |
+| Managing initiatives | `manage_initiative` |
 | Recalling recent work | `recall_recent_work` |
-| Summarizing initiatives | `summarize_initiative` |
-| Capturing insights | `insight_to_cortex` |
+| Summarizing initiatives | `manage_initiative` |
+| Capturing insights | `save_memory` |
 | Validating stale insights | `search_cortex`, `validate_insight` |
-| Admin/debug | `get_cortex_version`, `configure_cortex` |
-| Auto-capture status | `get_autocapture_status` |
-| Configure auto-capture | `configure_autocapture` |
+| Admin/debug | `configure_cortex` |
+| Auto-capture status | `configure_cortex` |
+| Configure auto-capture | `configure_cortex` |
 
 ---
 
-## Final Tool Set (21 tools)
+## Final Tool Set (10 Consolidated Tools)
 
 | Tool | Purpose |
 |------|---------|
 | `orient_session` | Session entry point with staleness and initiative detection |
 | `search_cortex` | Semantic search with initiative filtering, boosting, and staleness detection |
-| `ingest_code_into_cortex` | Index codebase with AST chunking |
-| `save_note_to_cortex` | Save notes, decisions, research (auto-tagged with initiative) |
-| `session_summary_to_cortex` | Save session summary + re-index files (auto-tagged, completion detection) |
-| `set_repo_context` | Set static tech stack info |
-| `set_initiative` | Legacy - use `create_initiative` instead |
-| `get_context_from_cortex` | Quick context retrieval |
-| `get_skeleton` | File tree for path grounding |
-| `configure_cortex` | Runtime configuration + enable/disable |
-| `get_cortex_version` | Version and rebuild detection |
-| `create_initiative` | Create and focus a new initiative |
-| `list_initiatives` | List initiatives with status filtering |
-| `focus_initiative` | Switch focus to a different initiative |
-| `complete_initiative` | Mark initiative as done with summary |
 | `recall_recent_work` | Timeline view of recent work for a repository |
-| `summarize_initiative` | Narrative summary of initiative progress |
-| `insight_to_cortex` | Save code analysis insights linked to files (auto-used after analysis) |
+| `save_memory` | Save notes (`kind="note"`) or insights (`kind="insight"`) - auto-tagged with initiative |
+| `conclude_session` | Save end-of-session summary with changed files (auto-tagged, completion detection) |
 | `validate_insight` | Verify stale insights against current code, deprecate if invalid |
-| `get_autocapture_status` | Check hook installation, LLM providers, and capture statistics |
-| `configure_autocapture` | Configure auto-capture settings (enabled, provider, thresholds) |
+| `manage_initiative` | Create, list, focus, complete, or summarize initiatives (`action` parameter) |
+| `ingest_codebase` | Index codebase with AST chunking or check async status (`action="ingest"` or `"status"`) |
+| `get_skeleton` | File tree for path grounding |
+| `configure_cortex` | Unified config: runtime settings, repo tech stack, autocapture, and system status |

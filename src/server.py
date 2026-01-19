@@ -18,27 +18,17 @@ from mcp.server.fastmcp import FastMCP
 
 from logging_config import get_logger, setup_logging
 from src.tools import (
-    session_summary_to_cortex,
-    complete_initiative,
     configure_cortex,
-    create_initiative,
-    focus_initiative,
-    get_cortex_version,
-    get_repo_context,
+    conclude_session,
     get_skeleton,
-    ingest_code_into_cortex,
-    insight_to_cortex,
-    list_initiatives,
+    ingest_codebase,
+    manage_initiative,
     orient_session,
     recall_recent_work,
-    save_note_to_cortex,
+    save_memory,
     search_cortex,
-    set_initiative,
-    set_repo_context,
-    summarize_initiative,
     validate_insight,
 )
-from src.tools.ingest import get_ingest_status
 
 # Initialize logging
 setup_logging()
@@ -48,43 +38,37 @@ logger = get_logger("server")
 
 mcp = FastMCP("Cortex")
 
-# --- Register Tools ---
+# --- Register Tools (10 consolidated tools) ---
 
-# Session
+# 1. Session entry point
 mcp.tool()(orient_session)
 
-# Search
+# 2. Search memory
 mcp.tool()(search_cortex)
 
-# Ingest
-mcp.tool()(ingest_code_into_cortex)
-mcp.tool()(get_ingest_status)
+# 3. Recent work timeline
+mcp.tool()(recall_recent_work)
 
-# Notes
-mcp.tool()(save_note_to_cortex)
-mcp.tool()(session_summary_to_cortex)
-mcp.tool()(insight_to_cortex)
+# 4. File tree structure
+mcp.tool()(get_skeleton)
+
+# 5. Initiative management (CRUD)
+mcp.tool()(manage_initiative)
+
+# 6. Save notes/insights
+mcp.tool()(save_memory)
+
+# 7. End-of-session summary
+mcp.tool()(conclude_session)
+
+# 8. Code ingestion
+mcp.tool()(ingest_codebase)
+
+# 9. Validate stale insights
 mcp.tool()(validate_insight)
 
-# Context
-mcp.tool()(set_repo_context)
-mcp.tool()(set_initiative)
-mcp.tool()(get_repo_context)
-
-# Initiatives
-mcp.tool()(create_initiative)
-mcp.tool()(list_initiatives)
-mcp.tool()(focus_initiative)
-mcp.tool()(complete_initiative)
-
-# Recall (Session Memory)
-mcp.tool()(recall_recent_work)
-mcp.tool()(summarize_initiative)
-
-# Admin
+# 10. Configuration and status
 mcp.tool()(configure_cortex)
-mcp.tool()(get_cortex_version)
-mcp.tool()(get_skeleton)
 
 
 # --- Entry Point ---

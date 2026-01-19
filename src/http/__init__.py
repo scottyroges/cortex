@@ -28,7 +28,7 @@ def get_startup_time() -> str:
 app = FastAPI(
     title="Cortex Server",
     description="HTTP endpoints for Cortex memory browser and API",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 # Include routers

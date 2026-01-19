@@ -8,12 +8,13 @@ Initiatives track work across sessions and tag commits/notes for context restora
 import json
 import re
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Literal, Optional
 
 from logging_config import get_logger
 from src.git import get_current_branch
-from src.tools.initiative_utils import calculate_duration, find_initiative
+from src.tools.initiative_utils import calculate_duration, calculate_duration_from_now, find_initiative
 from src.tools.services import get_collection, get_repo_path, get_searcher
 
 logger = get_logger("tools.initiatives")
@@ -28,7 +29,72 @@ COMPLETION_SIGNALS = [
 STALE_THRESHOLD_DAYS = 5
 
 
-def create_initiative(
+def manage_initiative(
+    action: Literal["create", "list", "focus", "complete", "summarize"],
+    repository: str,
+    name: Optional[str] = None,
+    initiative: Optional[str] = None,
+    goal: Optional[str] = None,
+    auto_focus: bool = True,
+    summary: Optional[str] = None,
+    status: Literal["all", "active", "completed"] = "all",
+) -> str:
+    """
+    Manage multi-session initiatives (epics, migrations, features).
+
+    **When to use this tool:**
+    - Starting a new multi-session project? action="create"
+    - Need to see what initiatives exist? action="list"
+    - Switching focus to different work? action="focus"
+    - Finished an initiative? action="complete"
+    - Want a progress summary? action="summarize"
+
+    Args:
+        action: Operation to perform ("create", "list", "focus", "complete", "summarize")
+        repository: Repository identifier (required for all actions)
+        name: Initiative name (required for "create")
+        initiative: Initiative ID or name (required for "focus", "complete", "summarize")
+        goal: Optional goal description (for "create")
+        auto_focus: Auto-focus after create (default: True)
+        summary: Completion summary (required for "complete")
+        status: Filter for "list" - "all", "active", or "completed"
+
+    Returns:
+        JSON with action result
+    """
+    if not repository:
+        return json.dumps({"error": "Repository name is required"})
+
+    if action == "create":
+        if not name:
+            return json.dumps({"error": "Initiative name is required for create action"})
+        return _create_initiative(repository, name, goal or "", auto_focus)
+
+    elif action == "list":
+        return _list_initiatives(repository, status)
+
+    elif action == "focus":
+        if not initiative:
+            return json.dumps({"error": "Initiative ID or name is required for focus action"})
+        return _focus_initiative(repository, initiative)
+
+    elif action == "complete":
+        if not initiative:
+            return json.dumps({"error": "Initiative ID or name is required for complete action"})
+        if not summary:
+            return json.dumps({"error": "Completion summary is required for complete action"})
+        return _complete_initiative(initiative, summary, repository)
+
+    elif action == "summarize":
+        if not initiative:
+            return json.dumps({"error": "Initiative ID or name is required for summarize action"})
+        return _summarize_initiative(initiative, repository)
+
+    else:
+        return json.dumps({"error": f"Unknown action: {action}. Valid actions: create, list, focus, complete, summarize"})
+
+
+def _create_initiative(
     repository: str,
     name: str,
     goal: str = "",
@@ -117,7 +183,7 @@ def create_initiative(
         return json.dumps({"status": "error", "error": str(e)})
 
 
-def list_initiatives(
+def _list_initiatives(
     repository: str,
     status: str = "all",
 ) -> str:
@@ -198,7 +264,7 @@ def list_initiatives(
         return json.dumps({"status": "error", "error": str(e)})
 
 
-def focus_initiative(
+def _focus_initiative(
     repository: str,
     initiative: str,
 ) -> str:
@@ -263,7 +329,7 @@ def focus_initiative(
         return json.dumps({"status": "error", "error": str(e)})
 
 
-def complete_initiative(
+def _complete_initiative(
     initiative: str,
     summary: str,
     repository: Optional[str] = None,
@@ -543,3 +609,236 @@ def check_initiative_staleness(
         return (days_inactive >= threshold_days, days_inactive)
     except Exception:
         return (False, 0)
+
+
+def _summarize_initiative(
+    initiative: str,
+    repository: Optional[str] = None,
+) -> str:
+    """
+    Generate a narrative summary of an initiative's progress.
+
+    Gathers all session summaries and notes tagged with the initiative and synthesizes
+    a timeline with key decisions, problems solved, and current state.
+
+    Args:
+        initiative: Initiative ID or name
+        repository: Repository identifier (optional if using initiative ID)
+
+    Returns:
+        JSON with initiative summary including timeline, stats, and narrative
+    """
+    if not initiative:
+        return json.dumps({"error": "Initiative ID or name is required"})
+
+    logger.info(f"Summarizing initiative: {initiative}")
+
+    try:
+        collection = get_collection()
+
+        # Find the initiative
+        init_data = find_initiative(collection, repository, initiative)
+        if not init_data:
+            return json.dumps({
+                "error": f"Initiative '{initiative}' not found",
+            })
+
+        initiative_id = init_data["id"]
+        init_meta = init_data["metadata"]
+        repo = init_meta.get("repository", repository)
+
+        # Get all session summaries and notes for this initiative
+        results = collection.get(
+            where={
+                "$and": [
+                    {"initiative_id": initiative_id},
+                    {"type": {"$in": ["session_summary", "note"]}},
+                ]
+            },
+            include=["documents", "metadatas"],
+        )
+
+        # Build items list
+        items = []
+        for i, doc_id in enumerate(results.get("ids", [])):
+            meta = results["metadatas"][i] if results.get("metadatas") else {}
+            doc = results["documents"][i] if results.get("documents") else ""
+
+            created_at = meta.get("created_at", "")
+
+            items.append({
+                "id": doc_id,
+                "type": meta.get("type", ""),
+                "created_at": created_at,
+                "title": meta.get("title", ""),
+                "files": json.loads(meta.get("files", "[]")) if meta.get("files") else [],
+                "content": doc,
+            })
+
+        # Sort chronologically
+        items.sort(key=lambda x: x.get("created_at", ""))
+
+        # Build timeline with phases
+        timeline = []
+        all_files = set()
+        session_count = 0
+        note_count = 0
+
+        for item in items:
+            if item["type"] == "session_summary":
+                session_count += 1
+                all_files.update(item.get("files", []))
+            else:
+                note_count += 1
+
+            # Parse date
+            created_at = item.get("created_at", "")
+            try:
+                parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                display_date = parsed.strftime("%b %d, %Y")
+            except (ValueError, TypeError):
+                display_date = "Unknown"
+
+            timeline.append({
+                "date": display_date,
+                "type": item["type"],
+                "title": item.get("title", ""),
+                "summary": item["content"][:300] + "..." if len(item["content"]) > 300 else item["content"],
+            })
+
+        # Calculate duration (use completed_at if available, otherwise now)
+        created_at = init_meta.get("created_at", "")
+        completed_at = init_meta.get("completed_at")
+        if completed_at:
+            duration = calculate_duration(created_at, completed_at)
+        else:
+            duration = calculate_duration_from_now(created_at)
+
+        # Build narrative summary
+        narrative = _build_initiative_narrative(init_meta, items, session_count, note_count)
+
+        response = {
+            "initiative": {
+                "id": initiative_id,
+                "name": init_meta.get("name", ""),
+                "goal": init_meta.get("goal", ""),
+                "status": init_meta.get("status", "active"),
+                "repository": repo,
+            },
+            "stats": {
+                "session_summaries": session_count,
+                "notes": note_count,
+                "files_touched": len(all_files),
+                "duration": duration,
+            },
+            "timeline": timeline,
+            "narrative": narrative,
+        }
+
+        if init_meta.get("status") == "completed":
+            response["initiative"]["completed_at"] = init_meta.get("completed_at", "")
+            response["initiative"]["completion_summary"] = init_meta.get("completion_summary", "")
+
+        logger.info(f"Summarized initiative: {session_count} session summaries, {note_count} notes")
+        return json.dumps(response, indent=2)
+
+    except Exception as e:
+        logger.error(f"Summarize initiative error: {e}")
+        return json.dumps({"status": "error", "error": str(e)})
+
+
+def _build_initiative_narrative(meta: dict, items: list, session_count: int, note_count: int) -> str:
+    """Build a narrative summary of the initiative."""
+    name = meta.get("name", "This initiative")
+    goal = meta.get("goal", "")
+    status = meta.get("status", "active")
+
+    parts = []
+
+    # Opening
+    if goal:
+        parts.append(f"**{name}**: {goal}")
+    else:
+        parts.append(f"**{name}**")
+
+    # Activity summary
+    if session_count > 0 or note_count > 0:
+        activity = []
+        if session_count > 0:
+            activity.append(f"{session_count} session summar{'ies' if session_count != 1 else 'y'}")
+        if note_count > 0:
+            activity.append(f"{note_count} note{'s' if note_count != 1 else ''}")
+        parts.append(f"Activity: {' and '.join(activity)} recorded.")
+
+    # Status
+    if status == "completed":
+        completion_summary = meta.get("completion_summary", "")
+        if completion_summary:
+            parts.append(f"Completed: {completion_summary}")
+        else:
+            parts.append("Status: Completed")
+    else:
+        parts.append("Status: Active")
+
+    # Recent activity hint
+    if items:
+        last_item = items[-1]
+        try:
+            last_date = datetime.fromisoformat(last_item.get("created_at", "").replace("Z", "+00:00"))
+            days_ago = (datetime.now(timezone.utc) - last_date).days
+            if days_ago == 0:
+                parts.append("Last activity: Today")
+            elif days_ago == 1:
+                parts.append("Last activity: Yesterday")
+            else:
+                parts.append(f"Last activity: {days_ago} days ago")
+        except (ValueError, TypeError):
+            pass
+
+    return "\n\n".join(parts)
+
+
+# --- Backward Compatibility Aliases (for tests and internal use) ---
+# These aliases are NOT exported via __all__ but can be imported directly
+
+def create_initiative(
+    repository: str,
+    name: str,
+    goal: str = "",
+    auto_focus: bool = True,
+) -> str:
+    """Backward-compatible alias for _create_initiative."""
+    return _create_initiative(repository, name, goal, auto_focus)
+
+
+def list_initiatives(
+    repository: str,
+    status: str = "all",
+) -> str:
+    """Backward-compatible alias for _list_initiatives."""
+    return _list_initiatives(repository, status)
+
+
+def focus_initiative(
+    repository: str,
+    initiative: str,
+) -> str:
+    """Backward-compatible alias for _focus_initiative."""
+    return _focus_initiative(repository, initiative)
+
+
+def complete_initiative(
+    initiative: str,
+    summary: str,
+    repository: Optional[str] = None,
+) -> str:
+    """Backward-compatible alias for _complete_initiative."""
+    return _complete_initiative(initiative, summary, repository)
+
+
+def summarize_initiative(
+    initiative: str,
+    repository: Optional[str] = None,
+) -> str:
+    """Backward-compatible alias for _summarize_initiative."""
+    return _summarize_initiative(initiative, repository)
