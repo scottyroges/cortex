@@ -7,6 +7,12 @@ numpy
 langchain-text-splitters
 anthropic
 
+# AST Parsing
+tree-sitter>=0.21.0
+tree-sitter-python>=0.21.0
+tree-sitter-typescript>=0.21.0
+tree-sitter-kotlin>=0.1.0
+
 # HTTP Server
 fastapi
 uvicorn

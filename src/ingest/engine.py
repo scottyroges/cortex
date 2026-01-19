@@ -20,6 +20,7 @@ from src.ingest.chunker import chunk_code_file, detect_language, extract_scope_f
 from src.ingest.headers import generate_header_sync
 from src.ingest.skeleton import generate_tree_structure, store_skeleton
 from src.ingest.walker import compute_file_hash, get_changed_files, walk_codebase
+from src.llm import LLMProvider
 from src.security import scrub_secrets
 from src.state import load_state, migrate_state, save_state
 from src.storage.gc import cleanup_state_entries, delete_file_chunks
@@ -394,6 +395,92 @@ class FileProcessor:
         return processed, skipped, chunks_created, errors
 
 
+class MetadataFileProcessor:
+    """Processes files using metadata-first approach.
+
+    Instead of code chunking, extracts structured metadata:
+    - file_metadata: File overview with description, exports, imports
+    - data_contract: Interfaces, types, schemas, dataclasses
+    - entry_point: Main functions, API routes, CLI commands
+    - dependency: Import relationships (built after all files processed)
+    """
+
+    def __init__(
+        self,
+        collection: chromadb.Collection,
+        repo_id: str,
+        branch: str,
+        llm_provider: Optional[LLMProvider] = None,
+    ):
+        self.collection = collection
+        self.repo_id = repo_id
+        self.branch = branch
+        self.llm_provider = llm_provider
+
+    def process_files(
+        self,
+        files: list[Path],
+        file_hashes: dict[str, str],
+    ) -> tuple[int, int, int, list[dict]]:
+        """
+        Process files using metadata extraction.
+
+        Returns:
+            Tuple of (processed_count, skipped_count, docs_created, errors)
+        """
+        # Import here to avoid circular imports
+        from src.ingest.metadata import ingest_file_metadata, build_dependencies
+
+        processed = 0
+        skipped = 0
+        docs_created = 0
+        errors = []
+        results = []
+
+        for file_path in files:
+            try:
+                result = ingest_file_metadata(
+                    file_path=file_path,
+                    collection=self.collection,
+                    repo_id=self.repo_id,
+                    branch=self.branch,
+                    llm_provider=self.llm_provider,
+                )
+
+                if result.error:
+                    skipped += 1
+                    if "Unsupported" not in result.error and "Empty" not in result.error:
+                        errors.append({"file": str(file_path), "error": result.error})
+                else:
+                    processed += 1
+                    # Count documents created
+                    if result.file_metadata_id:
+                        docs_created += 1
+                    docs_created += len(result.data_contract_ids)
+                    if result.entry_point_id:
+                        docs_created += 1
+
+                    # Update hash if available
+                    if result.metadata and result.metadata.file_hash:
+                        file_hashes[str(file_path)] = result.metadata.file_hash
+
+                results.append(result)
+
+            except Exception as e:
+                logger.warning(f"Error processing {file_path}: {e}")
+                errors.append({"file": str(file_path), "error": str(e)})
+                skipped += 1
+
+        # Build dependency graph after all files processed
+        if results:
+            dep_count = build_dependencies(
+                results, self.collection, self.repo_id, self.branch
+            )
+            docs_created += dep_count
+
+        return processed, skipped, docs_created, errors
+
+
 # =============================================================================
 # Main Ingestion Function
 # =============================================================================
@@ -409,6 +496,8 @@ def ingest_codebase(
     state_file: Optional[str] = None,
     include_patterns: Optional[list[str]] = None,
     use_cortexignore: bool = True,
+    metadata_first: bool = False,
+    llm_provider_instance: Optional[LLMProvider] = None,
 ) -> dict[str, Any]:
     """
     Ingest an entire codebase into the collection.
@@ -431,6 +520,10 @@ def ingest_codebase(
         include_patterns: If provided, only files matching at least one glob pattern are indexed.
                           Patterns are relative to root_path (e.g., ["src/**", "tests/**"])
         use_cortexignore: If True, load patterns from global + project cortexignore files
+        metadata_first: If True, use metadata extraction instead of code chunking.
+                        Creates file_metadata, data_contract, entry_point, and dependency
+                        documents instead of raw code chunks.
+        llm_provider_instance: LLMProvider instance for metadata descriptions (metadata_first only)
 
     Returns:
         Stats dictionary with ingestion results
@@ -473,16 +566,30 @@ def ingest_codebase(
 
     # Process files
     file_hashes = state.get("file_hashes", {})
-    processor = FileProcessor(
-        collection, repo_id, branch, anthropic_client, llm_provider
-    )
+
+    if metadata_first:
+        processor = MetadataFileProcessor(
+            collection, repo_id, branch, llm_provider_instance
+        )
+    else:
+        processor = FileProcessor(
+            collection, repo_id, branch, anthropic_client, llm_provider
+        )
+
     processed, skipped, chunks, errors = processor.process_files(
         delta_result.files_to_process, file_hashes
     )
 
     stats["files_processed"] = processed
     stats["files_skipped"] = skipped
-    stats["chunks_created"] = chunks
+    if metadata_first:
+        stats["docs_created"] = chunks  # chunks var holds doc count in metadata mode
+        stats["chunks_created"] = 0
+        stats["metadata_first"] = True
+    else:
+        stats["chunks_created"] = chunks
+        stats["docs_created"] = 0
+        stats["metadata_first"] = False
     stats["errors"] = errors
 
     # Update state
@@ -509,11 +616,18 @@ def ingest_codebase(
         stats["skeleton"] = {"error": str(e)}
 
     elapsed = time.time() - start_time
-    logger.info(
-        f"Ingestion complete ({stats['delta_mode']}): "
-        f"{stats['files_processed']} files, {stats['chunks_created']} chunks, "
-        f"{stats['chunks_deleted']} deleted in {elapsed:.1f}s"
-    )
+    if metadata_first:
+        logger.info(
+            f"Ingestion complete ({stats['delta_mode']}, metadata-first): "
+            f"{stats['files_processed']} files, {stats['docs_created']} docs, "
+            f"{stats['chunks_deleted']} deleted in {elapsed:.1f}s"
+        )
+    else:
+        logger.info(
+            f"Ingestion complete ({stats['delta_mode']}): "
+            f"{stats['files_processed']} files, {stats['chunks_created']} chunks, "
+            f"{stats['chunks_deleted']} deleted in {elapsed:.1f}s"
+        )
 
     return stats
 

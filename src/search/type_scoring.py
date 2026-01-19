@@ -13,15 +13,24 @@ from typing import Any
 # Default type multipliers
 # Insights are most valuable (unique understanding tied to code)
 # Notes and commits capture decisions and context
-# Code is indexed but less valuable than native grep/glob
+# Navigation types (file_metadata, entry_point, data_contract) are high value
+# Code is legacy - less valuable than native grep/glob
 DEFAULT_TYPE_MULTIPLIERS = {
+    # Understanding (irreplaceable - grep can't find this)
     "insight": 2.0,
     "note": 1.5,
     "commit": 1.5,
-    "code": 1.0,
-    "skeleton": 1.0,
+    # Navigation (high value - tells agent where to look)
+    "entry_point": 1.4,
+    "file_metadata": 1.3,
+    "data_contract": 1.3,
+    "dependency": 1.0,
+    # Context
     "tech_stack": 1.2,
+    "skeleton": 1.0,
     "initiative": 1.0,
+    # Legacy
+    "code": 1.0,
 }
 
 

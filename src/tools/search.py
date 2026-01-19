@@ -108,8 +108,8 @@ def build_branch_aware_filter(
     # If explicit types requested, build type-aware filter
     if types:
         # Separate branch-filtered types from cross-branch types
-        branch_types = [t for t in types if t in ("code", "skeleton")]
-        non_branch_types = [t for t in types if t not in ("code", "skeleton")]
+        branch_types = [t for t in types if t in BRANCH_FILTERED_TYPES]
+        non_branch_types = [t for t in types if t not in BRANCH_FILTERED_TYPES]
 
         # Build type filter with proper branch handling
         if branch_types and branches and branches != ["unknown"]:
@@ -139,16 +139,16 @@ def build_branch_aware_filter(
         # No branch filtering if unknown
         return {"repository": repository} if repository else None
 
-    # Types filtered by branch: code, skeleton
-    # Types NOT filtered: note, commit, tech_stack, initiative
+    # Types filtered by branch: code, skeleton, file_metadata, data_contract, entry_point, dependency
+    # Types NOT filtered: note, commit, tech_stack, initiative, insight
     branch_filter = {
         "$or": [
-            # Code/skeleton: filter by branch
+            # Code/metadata types: filter by branch
             {"$and": [
-                {"type": {"$in": ["code", "skeleton"]}},
+                {"type": {"$in": list(BRANCH_FILTERED_TYPES)}},
                 {"branch": {"$in": branches}}
             ]},
-            # Non-code types: always include (cross-branch)
+            # Semantic memory types: always include (cross-branch)
             {"type": {"$in": ["note", "commit", "tech_stack", "initiative", "insight"]}}
         ]
     }
@@ -160,9 +160,40 @@ def build_branch_aware_filter(
 
 
 # Valid document types for filtering
-VALID_TYPES = {"code", "skeleton", "note", "commit", "insight", "tech_stack", "initiative"}
+VALID_TYPES = {
+    # Legacy
+    "code",
+    # Metadata-first types
+    "file_metadata",
+    "data_contract",
+    "entry_point",
+    "dependency",
+    # Semantic memory
+    "note",
+    "commit",
+    "insight",
+    # Context
+    "skeleton",
+    "tech_stack",
+    "initiative",
+}
+
 # Types that require branch filtering
-BRANCH_FILTERED_TYPES = {"code", "skeleton"}
+BRANCH_FILTERED_TYPES = {"code", "skeleton", "file_metadata", "data_contract", "entry_point", "dependency"}
+
+# Search presets for common query patterns
+SEARCH_PRESETS = {
+    # "Why did we do X?" - understanding queries
+    "understanding": ["insight", "note", "commit"],
+    # "Where is X?" - navigation queries
+    "navigation": ["file_metadata", "entry_point", "data_contract"],
+    # "What's the structure?" - architecture queries
+    "structure": ["file_metadata", "dependency", "skeleton"],
+    # "Where is this error coming from?" - debugging
+    "trace": ["entry_point", "dependency", "data_contract"],
+    # All semantic memory (no code)
+    "memory": ["insight", "note", "commit", "file_metadata"],
+}
 
 
 @dataclass
@@ -556,6 +587,7 @@ def search_cortex(
     initiative: Optional[str] = None,
     include_completed: bool = True,
     types: Optional[list[str]] = None,
+    preset: Optional[str] = None,
 ) -> str:
     """
     Search the Cortex memory for relevant code, documentation, or notes.
@@ -569,12 +601,28 @@ def search_cortex(
         initiative: Optional initiative ID or name to filter results
         include_completed: Include content from completed initiatives (default: True)
         types: Optional list of document types to include. Valid types:
-               code, skeleton, note, commit, insight, tech_stack, initiative.
+               code, skeleton, note, commit, insight, tech_stack, initiative,
+               file_metadata, data_contract, entry_point, dependency.
                Example: ["note", "insight"] for understanding-only search.
+        preset: Optional search preset. Overrides types if provided.
+               Valid presets:
+               - "understanding": insights, notes, commits (why questions)
+               - "navigation": file_metadata, entry_points, data_contracts (where questions)
+               - "structure": file_metadata, dependencies, skeleton
+               - "trace": entry_points, dependencies, data_contracts (debugging)
+               - "memory": all semantic memory types
 
     Returns:
         JSON with search results including content, file paths, and scores
     """
+    # Apply preset if provided
+    if preset:
+        if preset in SEARCH_PRESETS:
+            types = SEARCH_PRESETS[preset]
+            logger.debug(f"Using preset '{preset}': {types}")
+        else:
+            logger.warning(f"Unknown preset '{preset}'. Valid: {list(SEARCH_PRESETS.keys())}")
+
     # Validate types if provided
     if types:
         invalid_types = set(types) - VALID_TYPES

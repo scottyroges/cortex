@@ -238,7 +238,25 @@ Cortex fills this gap by storing:
 
 ---
 
-## Phase 7: Scale & Teams ⬜
+## Phase 7: IDE Integration ⬜
+
+*Surface Cortex insights while browsing code in any editor.*
+
+| Feature | Description | Value |
+|---------|-------------|-------|
+| **File Context Query** | `get_context_for_file` MCP tool + HTTP endpoint | "What do we know about this file?" |
+| **LSP Server** | Language Server Protocol server using pygls | Universal editor support |
+| **Hover Provider** | Show linked insights on hover | Context at point of need |
+| **Code Lens** | "N insights" indicator at file top | Visual awareness |
+| **Stale Diagnostics** | Warning squiggles for outdated insights | Verification prompts |
+| **VS Code Extension** | Packaged extension for VS Code users | Easy installation |
+| **Editor Docs** | Setup guides for Neovim, Vim, Emacs, JetBrains | Universal access |
+
+*See `analysis/file-context-lsp.md` for full design.*
+
+---
+
+## Phase 8: Scale & Teams ⬜
 
 *Future: enterprise features.*
 

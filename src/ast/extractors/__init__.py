@@ -1,0 +1,12 @@
+"""
+Language-Specific Extractors
+
+Each extractor implements the LanguageExtractor interface for a specific language.
+"""
+
+from src.ast.extractors.base import LanguageExtractor, get_extractor, register_extractor
+
+# Import extractors to trigger registration
+from src.ast.extractors.python import PythonExtractor
+
+__all__ = ["LanguageExtractor", "get_extractor", "register_extractor", "PythonExtractor"]
