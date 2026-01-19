@@ -262,7 +262,7 @@ def utility_function_{module_idx}_{file_idx}(data: Optional[str] = None) -> str:
             root_path=str(codebase_small),
             collection=collection,
             repo_id="throughput-test",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         elapsed = time.perf_counter() - start
@@ -288,7 +288,7 @@ def utility_function_{module_idx}_{file_idx}(data: Optional[str] = None) -> str:
             root_path=str(codebase_medium),
             collection=collection,
             repo_id="throughput-medium",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         elapsed = time.perf_counter() - start
@@ -381,7 +381,7 @@ def validate_{i}(value: Optional[str]) -> bool:
             root_path=str(codebase_large),
             collection=collection,
             repo_id="large-test",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         elapsed = time.perf_counter() - start
@@ -407,7 +407,7 @@ def validate_{i}(value: Optional[str]) -> bool:
             root_path=str(codebase_large),
             collection=collection,
             repo_id="large-search-test",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -458,7 +458,7 @@ class TestMemoryEfficiency:
             root_path=str(temp_dir),
             collection=collection,
             repo_id="memory-test",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -476,7 +476,7 @@ class TestMemoryEfficiency:
                 root_path=str(temp_dir),
                 collection=collection,
                 repo_id="memory-test",
-                header_provider="none",
+                llm_provider="none",
                 state_file=state_file,
             )
 

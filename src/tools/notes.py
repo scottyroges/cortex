@@ -160,7 +160,7 @@ def commit_to_cortex(
 
     try:
         collection = get_collection()
-        anthropic = get_anthropic() if CONFIG["header_provider"] == "anthropic" else None
+        anthropic = get_anthropic() if CONFIG["llm_provider"] == "anthropic" else None
 
         # Save the summary as a note
         note_id = f"commit:{uuid.uuid4().hex[:8]}"
@@ -213,7 +213,7 @@ def commit_to_cortex(
             collection=collection,
             repo_id=repo,
             anthropic_client=anthropic,
-            header_provider=CONFIG["header_provider"],
+            llm_provider=CONFIG["llm_provider"],
         )
         logger.debug(f"Re-indexed files: {reindex_stats}")
 

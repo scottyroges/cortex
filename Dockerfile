@@ -53,7 +53,7 @@ EXPOSE 8080
 # Environment variables:
 #   CORTEX_DEBUG=true           Enable debug logging
 #   CORTEX_LOG_FILE=path        Log file path
-#   CORTEX_HEADER_PROVIDER=X    Header provider: "anthropic", "claude-cli", or "none"
+#   CORTEX_LLM_PROVIDER=X       LLM provider: "anthropic", "claude-cli", "ollama", "openrouter", or "none"
 #   CORTEX_DB_PATH=path         Custom database path
 #   CORTEX_DAEMON_URL=url       Daemon URL (for bridge mode)
 ENTRYPOINT ["python", "entrypoint.py"]

@@ -20,7 +20,7 @@ def configure_cortex(
     verbose: Optional[bool] = None,
     top_k_retrieve: Optional[int] = None,
     top_k_rerank: Optional[int] = None,
-    header_provider: Optional[str] = None,
+    llm_provider: Optional[str] = None,
     recency_boost: Optional[bool] = None,
     recency_half_life_days: Optional[float] = None,
     enabled: Optional[bool] = None,
@@ -33,7 +33,7 @@ def configure_cortex(
         verbose: Enable verbose output with debug info
         top_k_retrieve: Number of candidates to retrieve before reranking
         top_k_rerank: Number of results to return after reranking
-        header_provider: Provider for contextual headers: "anthropic", "claude-cli", or "none"
+        llm_provider: LLM provider for headers and summarization: "anthropic", "claude-cli", "ollama", "openrouter", or "none"
         recency_boost: Enable recency boosting for notes/commits (newer = higher rank)
         recency_half_life_days: Days until recency boost decays to ~0.5 (default 30)
         enabled: Enable or disable Cortex memory system (for A/B testing)
@@ -62,12 +62,12 @@ def configure_cortex(
         CONFIG["top_k_rerank"] = max(1, min(50, top_k_rerank))
         changes.append(f"top_k_rerank={CONFIG['top_k_rerank']}")
 
-    if header_provider is not None:
-        if header_provider in ("anthropic", "claude-cli", "none"):
-            CONFIG["header_provider"] = header_provider
-            changes.append(f"header_provider={header_provider}")
+    if llm_provider is not None:
+        if llm_provider in ("anthropic", "claude-cli", "ollama", "openrouter", "none"):
+            CONFIG["llm_provider"] = llm_provider
+            changes.append(f"llm_provider={llm_provider}")
         else:
-            logger.warning(f"Invalid header_provider: {header_provider}. Use 'anthropic', 'claude-cli', or 'none'")
+            logger.warning(f"Invalid llm_provider: {llm_provider}. Use 'anthropic', 'claude-cli', 'ollama', 'openrouter', or 'none'")
 
     if recency_boost is not None:
         CONFIG["recency_boost"] = recency_boost

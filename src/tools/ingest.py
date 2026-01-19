@@ -45,7 +45,7 @@ def ingest_code_into_cortex(
 
     try:
         collection = get_collection()
-        anthropic = get_anthropic() if CONFIG["header_provider"] == "anthropic" else None
+        anthropic = get_anthropic() if CONFIG["llm_provider"] == "anthropic" else None
 
         stats = ingest_codebase(
             root_path=path,
@@ -53,7 +53,7 @@ def ingest_code_into_cortex(
             repo_id=repository,
             anthropic_client=anthropic,
             force_full=force_full,
-            header_provider=CONFIG["header_provider"],
+            llm_provider=CONFIG["llm_provider"],
             include_patterns=include_patterns,
             use_cortexignore=use_cortexignore,
         )

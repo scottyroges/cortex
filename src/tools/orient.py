@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from logging_config import get_logger
+from src.config import get_llm_provider, load_yaml_config
 from src.git import (
     count_tracked_files,
     get_commits_since,
@@ -21,6 +22,67 @@ from src.state import load_state, migrate_state
 from src.tools.services import get_collection
 
 logger = get_logger("tools.orient")
+
+
+# =============================================================================
+# LLM Provider Health Check
+# =============================================================================
+
+
+def check_llm_health() -> dict[str, Any]:
+    """
+    Check if the configured LLM provider is available.
+
+    Returns:
+        Dict with:
+            provider: str - Configured provider name
+            available: bool - Whether provider is ready
+            warning: str - Warning message if not available (optional)
+    """
+    from src.llm import get_available_providers
+
+    config = load_yaml_config()
+    provider = get_llm_provider()
+
+    result: dict[str, Any] = {
+        "provider": provider,
+        "available": False,
+    }
+
+    if provider == "none":
+        result["warning"] = (
+            "No LLM provider configured. Auto-capture summarization disabled. "
+            "Set llm.primary_provider in ~/.cortex/config.yaml"
+        )
+        return result
+
+    # Check if provider is available
+    available = get_available_providers(config)
+    if provider in available:
+        result["available"] = True
+    else:
+        # Provider-specific messages
+        if provider == "claude-cli":
+            result["warning"] = (
+                "claude-cli configured but not available. "
+                "Ensure the summarizer proxy is running (cortex daemon restart)"
+            )
+        elif provider == "anthropic":
+            result["warning"] = (
+                "anthropic configured but ANTHROPIC_API_KEY not set"
+            )
+        elif provider == "openrouter":
+            result["warning"] = (
+                "openrouter configured but OPENROUTER_API_KEY not set"
+            )
+        elif provider == "ollama":
+            result["warning"] = (
+                "ollama configured but server not reachable at localhost:11434"
+            )
+        else:
+            result["warning"] = f"LLM provider '{provider}' not available"
+
+    return result
 
 
 # =============================================================================
@@ -484,6 +546,13 @@ def orient_session(project_path: str) -> str:
         # Add version/update info
         version_info = check_version_updates(project_path)
         response.update(version_info)
+
+        # Check LLM provider health
+        llm_health = check_llm_health()
+        if llm_health.get("warning"):
+            response["llm_warning"] = llm_health["warning"]
+        response["llm_provider"] = llm_health.get("provider", "none")
+        response["llm_available"] = llm_health.get("available", False)
 
         logger.info(f"Orient complete: indexed={indexed}, needs_reindex={staleness.needs_reindex}")
 

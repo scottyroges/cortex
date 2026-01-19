@@ -169,7 +169,7 @@ def generate_header_sync(
     file_path: str,
     language: Optional[Language],
     anthropic_client: Optional[Anthropic] = None,
-    header_provider: str = "none",
+    llm_provider: str = "none",
 ) -> str:
     """
     Generate header for a chunk using the specified provider.
@@ -179,7 +179,7 @@ def generate_header_sync(
         file_path: Path to the source file
         language: Detected language
         anthropic_client: Anthropic client (for "anthropic" provider)
-        header_provider: One of "anthropic", "claude-cli", "auto", or "none"
+        llm_provider: One of "anthropic", "claude-cli", "auto", or "none"
             - "auto": Use the unified LLM provider abstraction
 
     Returns:
@@ -187,11 +187,11 @@ def generate_header_sync(
     """
     lang_str = language.value if language else "text"
 
-    if header_provider == "anthropic" and anthropic_client:
+    if llm_provider == "anthropic" and anthropic_client:
         return generate_header_with_anthropic(chunk, file_path, lang_str, anthropic_client)
-    elif header_provider == "claude-cli":
+    elif llm_provider == "claude-cli":
         return generate_header_with_claude_cli(chunk, file_path, lang_str)
-    elif header_provider == "auto":
+    elif llm_provider == "auto":
         return generate_header_with_provider(chunk, file_path, lang_str)
 
     # Simple fallback header

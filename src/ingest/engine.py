@@ -238,7 +238,7 @@ def ingest_file(
     repo_id: str,
     branch: str,
     anthropic_client: Optional[Anthropic] = None,
-    header_provider: str = "none",
+    llm_provider: str = "none",
     chunk_size: int = 1500,
     chunk_overlap: int = 200,
 ) -> list[str]:
@@ -250,8 +250,8 @@ def ingest_file(
         collection: ChromaDB collection
         repo_id: Repository identifier
         branch: Git branch name
-        anthropic_client: Anthropic client (for "anthropic" header provider)
-        header_provider: One of "anthropic", "claude-cli", or "none"
+        anthropic_client: Anthropic client (for "anthropic" LLM provider)
+        llm_provider: One of "anthropic", "claude-cli", or "none"
         chunk_size: Maximum chunk size
         chunk_overlap: Overlap between chunks
 
@@ -291,7 +291,7 @@ def ingest_file(
             path_str,
             language,
             anthropic_client,
-            header_provider=header_provider,
+            llm_provider=llm_provider,
         )
 
         # Extract function/class scope from chunk
@@ -344,13 +344,13 @@ class FileProcessor:
         repo_id: str,
         branch: str,
         anthropic_client: Optional[Anthropic],
-        header_provider: str,
+        llm_provider: str,
     ):
         self.collection = collection
         self.repo_id = repo_id
         self.branch = branch
         self.anthropic_client = anthropic_client
-        self.header_provider = header_provider
+        self.llm_provider = llm_provider
 
     def process_files(
         self,
@@ -376,7 +376,7 @@ class FileProcessor:
                     repo_id=self.repo_id,
                     branch=self.branch,
                     anthropic_client=self.anthropic_client,
-                    header_provider=self.header_provider,
+                    llm_provider=self.llm_provider,
                 )
 
                 if doc_ids:
@@ -405,7 +405,7 @@ def ingest_codebase(
     repo_id: Optional[str] = None,
     anthropic_client: Optional[Anthropic] = None,
     force_full: bool = False,
-    header_provider: str = "none",
+    llm_provider: str = "none",
     state_file: Optional[str] = None,
     include_patterns: Optional[list[str]] = None,
     use_cortexignore: bool = True,
@@ -424,9 +424,9 @@ def ingest_codebase(
         root_path: Root directory to ingest
         collection: ChromaDB collection to add documents to
         repo_id: Repository identifier (defaults to directory name)
-        anthropic_client: Anthropic client (for "anthropic" header provider)
+        anthropic_client: Anthropic client (for "anthropic" LLM provider)
         force_full: Force full re-ingestion (ignore delta sync)
-        header_provider: One of "anthropic", "claude-cli", or "none"
+        llm_provider: One of "anthropic", "claude-cli", or "none"
         state_file: Path to state file for delta sync
         include_patterns: If provided, only files matching at least one glob pattern are indexed.
                           Patterns are relative to root_path (e.g., ["src/**", "tests/**"])
@@ -474,7 +474,7 @@ def ingest_codebase(
     # Process files
     file_hashes = state.get("file_hashes", {})
     processor = FileProcessor(
-        collection, repo_id, branch, anthropic_client, header_provider
+        collection, repo_id, branch, anthropic_client, llm_provider
     )
     processed, skipped, chunks, errors = processor.process_files(
         delta_result.files_to_process, file_hashes
@@ -523,7 +523,7 @@ def ingest_files(
     collection: chromadb.Collection,
     repo_id: str,
     anthropic_client: Optional[Anthropic] = None,
-    header_provider: str = "none",
+    llm_provider: str = "none",
 ) -> dict[str, Any]:
     """
     Ingest specific files into the collection.
@@ -535,7 +535,7 @@ def ingest_files(
         collection: ChromaDB collection
         repo_id: Repository identifier
         anthropic_client: Anthropic client
-        header_provider: Header provider setting
+        llm_provider: LLM provider setting
 
     Returns:
         Stats dictionary
@@ -567,7 +567,7 @@ def ingest_files(
                 repo_id=repo_id,
                 branch=branch,
                 anthropic_client=anthropic_client,
-                header_provider=header_provider,
+                llm_provider=llm_provider,
             )
 
             stats["files_processed"] += 1

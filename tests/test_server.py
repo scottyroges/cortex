@@ -100,7 +100,7 @@ class TestIngestCodeIntoCortex:
             root_path=str(temp_dir),
             collection=collection,
             repo_id="testproject",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -131,7 +131,7 @@ class TestIngestCodeIntoCortex:
         stats1 = ingest_codebase(
             root_path=str(temp_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         assert stats1["files_processed"] == 1
@@ -140,7 +140,7 @@ class TestIngestCodeIntoCortex:
         stats2 = ingest_codebase(
             root_path=str(temp_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         assert stats2["files_processed"] == 0
@@ -149,7 +149,7 @@ class TestIngestCodeIntoCortex:
         stats3 = ingest_codebase(
             root_path=str(temp_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
             force_full=True,
         )
@@ -784,7 +784,7 @@ def validate_input(value):
             root_path=str(temp_dir),
             collection=collection,
             repo_id="testcalc",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -915,20 +915,23 @@ class TestBranchAwareFilter:
         assert result is None
 
     def test_filter_code_types_filtered_by_branch(self):
-        """Test that code and skeleton types are in the branch-filtered clause."""
-        from src.tools.search import build_branch_aware_filter
+        """Test that branch-filtered types (code, skeleton, etc.) are in the branch-filtered clause."""
+        from src.tools.search import build_branch_aware_filter, BRANCH_FILTERED_TYPES
 
         result = build_branch_aware_filter(repository=None, branches=["feature", "main"])
 
-        # Find the branch-filtered clause
+        # Find the branch-filtered clause (the one with $and containing type and branch)
         or_clauses = result["$or"]
         branch_filtered = None
         for clause in or_clauses:
             if "$and" in clause:
                 for sub in clause["$and"]:
-                    if "type" in sub and sub["type"].get("$in") == ["code", "skeleton"]:
-                        branch_filtered = clause
-                        break
+                    if "type" in sub:
+                        types_in_clause = set(sub["type"].get("$in", []))
+                        # Check if this is the branch-filtered types clause
+                        if types_in_clause == BRANCH_FILTERED_TYPES:
+                            branch_filtered = clause
+                            break
 
         assert branch_filtered is not None
         # Should filter by branches

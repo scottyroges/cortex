@@ -264,11 +264,35 @@ MAX_FILE_SIZE = 1_000_000  # 1MB max file size
 # --- Runtime Configuration ---
 
 
-def get_default_header_provider() -> str:
-    """Get header provider from env var or default to 'none'."""
-    provider = os.environ.get("CORTEX_HEADER_PROVIDER", "none").lower()
-    if provider in ("anthropic", "claude-cli", "none"):
-        return provider
+def get_llm_provider() -> str:
+    """
+    Get the configured LLM provider.
+
+    Priority:
+    1. CORTEX_LLM_PROVIDER env var
+    2. llm.primary_provider from config.yaml
+    3. Default: "none"
+
+    Returns:
+        Provider name: "anthropic", "claude-cli", "ollama", "openrouter", or "none"
+    """
+    # Check env var first
+    env_provider = os.environ.get("CORTEX_LLM_PROVIDER", "").lower()
+    if env_provider in ("anthropic", "claude-cli", "ollama", "openrouter", "none"):
+        return env_provider
+
+    # Legacy env var for backward compatibility
+    legacy_provider = os.environ.get("CORTEX_HEADER_PROVIDER", "").lower()
+    if legacy_provider in ("anthropic", "claude-cli", "none"):
+        return legacy_provider
+
+    # Try config.yaml
+    yaml_config = load_yaml_config()
+    llm_config = yaml_config.get("llm", {})
+    config_provider = llm_config.get("primary_provider", "").lower()
+    if config_provider in ("anthropic", "claude-cli", "ollama", "openrouter", "none"):
+        return config_provider
+
     return "none"
 
 
@@ -301,7 +325,7 @@ DEFAULT_CONFIG = {
     "enabled": True,
     "top_k_retrieve": 50,
     "top_k_rerank": 5,
-    "header_provider": get_default_header_provider(),
+    "llm_provider": "none",  # Set dynamically via get_llm_provider()
     "recency_boost": True,
     "recency_half_life_days": 30.0,
     # Type-based scoring (prioritize understanding over code)
@@ -564,6 +588,9 @@ def get_full_config() -> dict:
 
     # Add full YAML config for access to llm, autocapture sections
     config["_yaml"] = yaml_config
+
+    # Set LLM provider dynamically (checks env var, then config.yaml)
+    config["llm_provider"] = get_llm_provider()
 
     # Environment overrides
     if os.environ.get("CORTEX_MIN_SCORE"):

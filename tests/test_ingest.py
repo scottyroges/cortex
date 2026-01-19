@@ -348,7 +348,7 @@ class TestIngestion:
             collection=collection,
             repo_id="test",
             branch="main",
-            header_provider="none",  # Skip LLM headers for testing
+            llm_provider="none",  # Skip LLM headers for testing
         )
 
         assert len(doc_ids) >= 1
@@ -369,7 +369,7 @@ class TestIngestion:
             collection=collection,
             repo_id="myproject",
             branch="feature",
-            header_provider="none",
+            llm_provider="none",
         )
 
         results = collection.get(include=["metadatas"])
@@ -391,7 +391,7 @@ class TestIngestion:
             collection=collection,
             repo_id="test",
             branch="main",
-            header_provider="none",
+            llm_provider="none",
         )
 
         results = collection.get(include=["documents"])
@@ -419,7 +419,7 @@ class TestIngestion:
             root_path=str(temp_dir),
             collection=collection,
             repo_id="myproject",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -446,7 +446,7 @@ class TestIngestion:
         stats1 = ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         assert stats1["files_processed"] == 1
@@ -455,7 +455,7 @@ class TestIngestion:
         stats2 = ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         # No files should be processed (unchanged)
@@ -468,7 +468,7 @@ class TestIngestion:
         stats3 = ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
         assert stats3["files_processed"] == 1
@@ -491,7 +491,7 @@ class TestIngestion:
         ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -499,7 +499,7 @@ class TestIngestion:
         stats = ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
             force_full=True,
         )
@@ -520,7 +520,7 @@ class TestIngestion:
             collection=collection,
             repo_id="test",
             branch="main",
-            header_provider="none",
+            llm_provider="none",
         )
 
         assert doc_ids == []
@@ -994,7 +994,7 @@ class TestStateFormat:
         ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=str(state_file),
         )
 
@@ -1036,7 +1036,7 @@ class TestStateFormat:
         stats = ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -1058,7 +1058,7 @@ class TestStateFormat:
         stats = ingest_codebase(
             root_path=str(code_dir),
             collection=collection,
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
         )
 
@@ -1235,7 +1235,7 @@ generated.py
             root_path=str(code_dir),
             collection=collection,
             repo_id="test",
-            header_provider="none",
+            llm_provider="none",
             state_file=state_file,
             include_patterns=["src/**"],
         )

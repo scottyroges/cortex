@@ -288,7 +288,7 @@ MCP_TOOL_SCHEMAS = [
                 "verbose": {"type": "boolean", "description": "Enable verbose output"},
                 "top_k_retrieve": {"type": "integer", "description": "Candidates before reranking"},
                 "top_k_rerank": {"type": "integer", "description": "Results after reranking"},
-                "header_provider": {"type": "string", "description": "Header provider: anthropic, claude-cli, or none"},
+                "llm_provider": {"type": "string", "description": "LLM provider: anthropic, claude-cli, ollama, openrouter, or none"},
                 "recency_boost": {"type": "boolean", "description": "Enable recency boosting for notes/commits"},
                 "recency_half_life_days": {"type": "number", "description": "Days until recency boost decays to ~0.5"},
                 "enabled": {"type": "boolean", "description": "Enable or disable Cortex memory system"},

@@ -64,6 +64,7 @@ CONFIG_CODE_PATHS=""
 CONFIG_DEBUG=""
 CONFIG_HTTP_PORT=""
 CONFIG_DAEMON_PORT=""
+CONFIG_LLM_PROVIDER=""
 
 # Track env var overrides (for display purposes)
 ENV_OVERRIDE_CODE_PATHS=""
@@ -124,6 +125,10 @@ if isinstance(paths, list):
 print('DEBUG=' + str(c.get('debug', '')).lower())
 print('HTTP_PORT=' + str(c.get('http_port', '')))
 print('DAEMON_PORT=' + str(c.get('daemon_port', '')))
+# Extract nested llm.primary_provider
+llm = c.get('llm', {})
+if isinstance(llm, dict):
+    print('LLM_PROVIDER=' + str(llm.get('primary_provider', '')))
 " 2>/dev/null)
 
         if [ $? -eq 0 ]; then
@@ -134,6 +139,7 @@ print('DAEMON_PORT=' + str(c.get('daemon_port', '')))
                     DEBUG) CONFIG_DEBUG="$value" ;;
                     HTTP_PORT) CONFIG_HTTP_PORT="$value" ;;
                     DAEMON_PORT) CONFIG_DAEMON_PORT="$value" ;;
+                    LLM_PROVIDER) CONFIG_LLM_PROVIDER="$value" ;;
                 esac
             done <<< "$config"
         fi
@@ -261,13 +267,19 @@ build_docker_env() {
     DOCKER_ENVS=()
     DOCKER_ENVS+=("-e" "CORTEX_DATA_PATH=$DATA_PATH")
     DOCKER_ENVS+=("-e" "CORTEX_DB_PATH=$DATA_PATH/db")
-    [ -n "$CORTEX_HEADER_PROVIDER" ] && DOCKER_ENVS+=("-e" "CORTEX_HEADER_PROVIDER=$CORTEX_HEADER_PROVIDER")
     [ -n "$CORTEX_DEBUG" ] && DOCKER_ENVS+=("-e" "CORTEX_DEBUG=$CORTEX_DEBUG")
     [ -n "$ANTHROPIC_API_KEY" ] && DOCKER_ENVS+=("-e" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
+    [ -n "$OPENROUTER_API_KEY" ] && DOCKER_ENVS+=("-e" "OPENROUTER_API_KEY=$OPENROUTER_API_KEY")
     [ -n "$CORTEX_LOG_FILE" ] && DOCKER_ENVS+=("-e" "CORTEX_LOG_FILE=$CORTEX_LOG_FILE")
 
+    # Determine LLM provider: env var overrides config file
+    local llm_provider="${CORTEX_LLM_PROVIDER:-${CONFIG_LLM_PROVIDER:-none}}"
+
+    # Pass the LLM provider setting to the daemon
+    DOCKER_ENVS+=("-e" "CORTEX_LLM_PROVIDER=$llm_provider")
+
     # Pass summarizer URL if using claude-cli (host.docker.internal for Mac/Windows)
-    if [ "$CORTEX_HEADER_PROVIDER" = "claude-cli" ]; then
+    if [ "$llm_provider" = "claude-cli" ]; then
         DOCKER_ENVS+=("-e" "CORTEX_SUMMARIZER_URL=http://host.docker.internal:$SUMMARIZER_PORT")
     fi
 }
@@ -287,14 +299,17 @@ is_summarizer_running() {
 
 start_summarizer() {
     # Only start if using claude-cli as LLM provider
-    if [ "$CORTEX_HEADER_PROVIDER" != "claude-cli" ]; then
+    local llm_provider="${CORTEX_LLM_PROVIDER:-${CONFIG_LLM_PROVIDER:-none}}"
+    if [ "$llm_provider" != "claude-cli" ]; then
         return 0
     fi
 
     # Check if claude CLI is available
     if ! command -v claude &>/dev/null; then
-        log_warn "claude CLI not found - summarizer not started"
-        return 0
+        log_error "claude-cli is configured as LLM provider but 'claude' CLI not found"
+        log_error "Install with: npm install -g @anthropic-ai/claude-code"
+        log_error "Or change llm.primary_provider in ~/.cortex/config.yaml"
+        return 1
     fi
 
     if is_summarizer_running; then
@@ -1210,6 +1225,86 @@ except Exception as e:
     print(f'ERROR ({e})')
 " 2>/dev/null || echo "UNKNOWN"
 
+    # Check 13: LLM Provider
+    echo ""
+    echo "LLM Provider"
+    echo "------------"
+    local llm_provider="${CORTEX_LLM_PROVIDER:-${CONFIG_LLM_PROVIDER:-none}}"
+    echo "Configured provider: $llm_provider"
+
+    case "$llm_provider" in
+        claude-cli)
+            # Check if claude CLI is available on host
+            echo -n "  Claude CLI: "
+            if command -v claude &>/dev/null; then
+                echo "OK (found in PATH)"
+            else
+                echo "NOT FOUND"
+                echo "    Install with: npm install -g @anthropic-ai/claude-code"
+            fi
+
+            # Check if summarizer proxy is running (needed for Docker mode)
+            echo -n "  Summarizer proxy: "
+            if is_summarizer_running; then
+                local pid
+                pid=$(cat "$SUMMARIZER_PID_FILE")
+                echo "OK (PID: $pid)"
+            else
+                echo "NOT RUNNING"
+                echo "    Will be started when daemon starts"
+            fi
+
+            # Check if summarizer is actually reachable
+            echo -n "  Summarizer reachable: "
+            if curl -sf "http://localhost:$SUMMARIZER_PORT/health" >/dev/null 2>&1; then
+                echo "OK (port $SUMMARIZER_PORT)"
+            else
+                if is_summarizer_running; then
+                    echo "FAIL - Process running but /health unreachable"
+                else
+                    echo "SKIP - Not running"
+                fi
+            fi
+            ;;
+        anthropic)
+            echo -n "  ANTHROPIC_API_KEY: "
+            if [ -n "$ANTHROPIC_API_KEY" ]; then
+                echo "OK (set)"
+            else
+                echo "NOT SET"
+                echo "    Export ANTHROPIC_API_KEY to enable"
+            fi
+            ;;
+        openrouter)
+            echo -n "  OPENROUTER_API_KEY: "
+            if [ -n "$OPENROUTER_API_KEY" ]; then
+                echo "OK (set)"
+            else
+                echo "NOT SET"
+                echo "    Export OPENROUTER_API_KEY to enable"
+            fi
+            ;;
+        ollama)
+            echo -n "  Ollama server: "
+            if curl -sf "http://localhost:11434/api/version" >/dev/null 2>&1; then
+                local ollama_version
+                ollama_version=$(curl -sf "http://localhost:11434/api/version" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version','unknown'))" 2>/dev/null)
+                echo "OK (v$ollama_version)"
+            else
+                echo "NOT REACHABLE"
+                echo "    Start Ollama or check if it's running on localhost:11434"
+            fi
+            ;;
+        none)
+            echo "  No LLM provider configured"
+            echo "  Auto-capture summarization will be disabled"
+            echo "  Set llm.primary_provider in ~/.cortex/config.yaml"
+            ;;
+        *)
+            echo "  Unknown provider: $llm_provider"
+            ;;
+    esac
+
     echo ""
     return $essential_status
 }
@@ -1420,7 +1515,9 @@ ENVIRONMENT VARIABLES (override config.yaml):
     CORTEX_DEBUG            Enable debug logging (true/false)
     CORTEX_DAEMON_PORT      Daemon port (default: 8000)
     CORTEX_HTTP_PORT        HTTP debug server port (default: 8080)
-    ANTHROPIC_API_KEY       Required for LLM provider="anthropic"
+    CORTEX_LLM_PROVIDER     LLM provider: anthropic, claude-cli, ollama, openrouter, none
+    ANTHROPIC_API_KEY       Required for llm.primary_provider="anthropic"
+    OPENROUTER_API_KEY      Required for llm.primary_provider="openrouter"
 
 QUICK START:
     1. Run 'cortex init' to configure your settings
