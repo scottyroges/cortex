@@ -70,37 +70,37 @@ def get_current_branch(path: str) -> str:
     return branch if branch else "unknown"
 
 
-def get_commits_since(path: str, since_timestamp: str) -> int:
+def get_commits_since(path: str, since_commit: str) -> int:
     """
-    Count commits since a given timestamp.
+    Count commits since a given commit (exclusive).
 
     Args:
         path: Repository path
-        since_timestamp: ISO format timestamp
+        since_commit: Commit hash to start from (not included in count)
 
     Returns:
-        Number of commits since timestamp
+        Number of commits between since_commit and HEAD
     """
     return git_count_lines(
-        ["log", "--oneline", f"--since={since_timestamp}"],
+        ["log", "--oneline", f"{since_commit}..HEAD"],
         path,
         timeout=10,
     )
 
 
-def get_merge_commits_since(path: str, since_timestamp: str) -> int:
+def get_merge_commits_since(path: str, since_commit: str) -> int:
     """
-    Count merge commits since a given timestamp.
+    Count merge commits since a given commit (exclusive).
 
     Args:
         path: Repository path
-        since_timestamp: ISO format timestamp
+        since_commit: Commit hash to start from (not included in count)
 
     Returns:
-        Number of merge commits since timestamp
+        Number of merge commits between since_commit and HEAD
     """
     return git_count_lines(
-        ["log", "--oneline", "--merges", f"--since={since_timestamp}"],
+        ["log", "--oneline", "--merges", f"{since_commit}..HEAD"],
         path,
         timeout=10,
     )
