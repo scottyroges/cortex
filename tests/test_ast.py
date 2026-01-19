@@ -850,3 +850,356 @@ class TestDescriptionPrompt:
         assert "{file_path}" in DESCRIPTION_PROMPT
         assert "{code}" in DESCRIPTION_PROMPT
         assert "search-optimized" in DESCRIPTION_PROMPT
+
+
+# =============================================================================
+# Phase 4: TypeScript Extractor Tests
+# =============================================================================
+
+from src.ast.extractors.typescript import TypeScriptExtractor
+
+
+class TestTypeScriptExtractorImports:
+    """Test TypeScript import extraction."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_named_import(self):
+        source = "import { Router, Request } from 'express';"
+        tree = self.parser.parse(source, "typescript")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 1
+        assert imports[0].module == "express"
+        assert "Router" in imports[0].names
+        assert "Request" in imports[0].names
+        assert imports[0].is_external
+
+    def test_default_import(self):
+        source = "import React from 'react';"
+        tree = self.parser.parse(source, "typescript")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 1
+        assert imports[0].module == "react"
+        assert "React" in imports[0].names
+
+    def test_namespace_import(self):
+        source = "import * as utils from './utils';"
+        tree = self.parser.parse(source, "typescript")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 1
+        assert imports[0].module == "./utils"
+        assert imports[0].alias == "utils"
+        assert "*" in imports[0].names
+        assert not imports[0].is_external
+
+    def test_type_import(self):
+        source = "import type { User } from './types';"
+        tree = self.parser.parse(source, "typescript")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 1
+        assert imports[0].module == "./types"
+        assert "User" in imports[0].names
+
+    def test_relative_import(self):
+        source = "import { helper } from '../utils/helper';"
+        tree = self.parser.parse(source, "typescript")
+        imports = self.extractor.extract_imports(tree, source)
+
+        assert len(imports) == 1
+        assert not imports[0].is_external
+
+
+class TestTypeScriptExtractorExports:
+    """Test TypeScript export extraction."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_export_interface(self):
+        source = """
+export interface User {
+    id: string;
+    name: string;
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        exports = self.extractor.extract_exports(tree, source)
+
+        assert "User" in exports
+
+    def test_export_class(self):
+        source = """
+export class UserService {
+    getUser(id: string): User { return null; }
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        exports = self.extractor.extract_exports(tree, source)
+
+        assert "UserService" in exports
+
+    def test_export_function(self):
+        source = """
+export function createUser(name: string): User {
+    return { name };
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        exports = self.extractor.extract_exports(tree, source)
+
+        assert "createUser" in exports
+
+    def test_export_const(self):
+        source = "export const API_URL = 'https://api.example.com';"
+        tree = self.parser.parse(source, "typescript")
+        exports = self.extractor.extract_exports(tree, source)
+
+        assert "API_URL" in exports
+
+    def test_export_default_not_counted_as_regular(self):
+        source = """
+export default class App {}
+"""
+        tree = self.parser.parse(source, "typescript")
+        exports = self.extractor.extract_exports(tree, source)
+
+        # Default exports are tracked separately
+        assert "App" in exports
+
+
+class TestTypeScriptExtractorDataContracts:
+    """Test TypeScript data contract extraction."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_interface_contract(self):
+        source = """
+interface UserDTO {
+    id: string;
+    name: string;
+    email?: string;
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        contracts = self.extractor.extract_data_contracts(tree, source)
+
+        assert len(contracts) == 1
+        contract = contracts[0]
+        assert contract.name == "UserDTO"
+        assert contract.contract_type == "interface"
+        assert len(contract.fields) == 3
+        assert contract.fields[0].name == "id"
+        assert contract.fields[2].optional  # email is optional
+
+    def test_type_alias_contract(self):
+        source = "type UserId = string;"
+        tree = self.parser.parse(source, "typescript")
+        contracts = self.extractor.extract_data_contracts(tree, source)
+
+        assert len(contracts) == 1
+        assert contracts[0].name == "UserId"
+        assert contracts[0].contract_type == "type"
+
+    def test_enum_contract(self):
+        source = """
+enum Status {
+    Active = 'active',
+    Inactive = 'inactive'
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        contracts = self.extractor.extract_data_contracts(tree, source)
+
+        assert len(contracts) == 1
+        contract = contracts[0]
+        assert contract.name == "Status"
+        assert contract.contract_type == "enum"
+        assert len(contract.fields) == 2
+
+
+class TestTypeScriptExtractorFunctions:
+    """Test TypeScript function extraction."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_simple_function(self):
+        source = """
+function greet(name: string): string {
+    return \`Hello, \${name}!\`;
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        functions = self.extractor.extract_functions(tree, source)
+
+        assert len(functions) == 1
+        func = functions[0]
+        assert func.name == "greet"
+        assert func.return_type == "string"
+        assert len(func.parameters) == 1
+        assert func.parameters[0].name == "name"
+
+    def test_async_function(self):
+        source = """
+async function fetchData(url: string): Promise<Response> {
+    return fetch(url);
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        functions = self.extractor.extract_functions(tree, source)
+
+        assert len(functions) == 1
+        assert functions[0].is_async
+
+    def test_exported_arrow_function(self):
+        source = "export const add = (a: number, b: number): number => a + b;"
+        tree = self.parser.parse(source, "typescript")
+        functions = self.extractor.extract_functions(tree, source)
+
+        assert len(functions) == 1
+        func = functions[0]
+        assert func.name == "add"
+        assert len(func.parameters) == 2
+
+
+class TestTypeScriptExtractorClasses:
+    """Test TypeScript class extraction."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_simple_class(self):
+        source = """
+class UserService {
+    constructor(private db: Database) {}
+
+    async getUser(id: string): Promise<User> {
+        return this.db.find(id);
+    }
+
+    createUser(name: string): User {
+        return { name };
+    }
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        classes = self.extractor.extract_classes(tree, source)
+
+        assert len(classes) == 1
+        cls = classes[0]
+        assert cls.name == "UserService"
+        assert len(cls.methods) == 3  # constructor, getUser, createUser
+
+    def test_class_with_extends(self):
+        source = """
+class Admin extends User {
+    role: string = 'admin';
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        classes = self.extractor.extract_classes(tree, source)
+
+        assert len(classes) == 1
+        assert "User" in classes[0].bases
+
+    def test_class_with_implements(self):
+        source = """
+class UserService implements IUserService {
+    getUser(id: string): User { return null; }
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        classes = self.extractor.extract_classes(tree, source)
+
+        assert len(classes) == 1
+        assert "IUserService" in classes[0].bases
+
+
+class TestTypeScriptExtractorEntryPoints:
+    """Test TypeScript entry point detection."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_express_route(self):
+        source = """
+import { Router } from 'express';
+const router = Router();
+router.get('/users', (req, res) => {});
+export default router;
+"""
+        tree = self.parser.parse(source, "typescript")
+        entry_type = self.extractor.detect_entry_point(tree, source, "routes/users.ts")
+
+        assert entry_type == "api_route"
+
+    def test_cli_with_commander(self):
+        source = """
+import { program } from 'commander';
+program.option('-n, --name <name>', 'Your name');
+program.parse();
+"""
+        tree = self.parser.parse(source, "typescript")
+        entry_type = self.extractor.detect_entry_point(tree, source, "cli.ts")
+
+        assert entry_type == "cli"
+
+
+class TestTypeScriptExtractorBarrel:
+    """Test TypeScript barrel file detection."""
+
+    def setup_method(self):
+        self.extractor = TypeScriptExtractor()
+        self.parser = get_parser()
+
+    def test_barrel_file(self):
+        source = """
+export * from './user';
+export * from './post';
+export { default as config } from './config';
+"""
+        tree = self.parser.parse(source, "typescript")
+        is_barrel = self.extractor.detect_barrel(tree, source, "src/index.ts")
+
+        assert is_barrel
+
+    def test_non_barrel_index(self):
+        source = """
+export * from './types';
+
+export function setup(): void {
+    console.log('Setup');
+}
+"""
+        tree = self.parser.parse(source, "typescript")
+        is_barrel = self.extractor.detect_barrel(tree, source, "src/index.ts")
+
+        assert not is_barrel  # Has own code
+
+    def test_regular_file_not_barrel(self):
+        source = "export * from './types';"
+        tree = self.parser.parse(source, "typescript")
+        is_barrel = self.extractor.detect_barrel(tree, source, "src/user.ts")
+
+        assert not is_barrel  # Not an index file
+
+
+class TestTypeScriptExtractorRegistry:
+    """Test that TypeScript extractor is registered."""
+
+    def test_get_typescript_extractor(self):
+        extractor = get_extractor("typescript")
+        assert extractor is not None
+        assert extractor.language == "typescript"
