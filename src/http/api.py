@@ -8,7 +8,7 @@ import hashlib
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Query
@@ -83,11 +83,13 @@ def ingest_web(request: IngestRequest) -> dict[str, Any]:
     doc_id = f"web_{hashlib.md5(request.url.encode()).hexdigest()[:12]}_{uuid.uuid4().hex[:8]}"
 
     # Build metadata
+    now = datetime.now(timezone.utc).isoformat()
     metadata = {
         "type": "web",
         "url": request.url,
         "repository": request.repository,
-        "ingested_at": datetime.utcnow().isoformat(),
+        "created_at": now,
+        "updated_at": now,
     }
     if request.title:
         metadata["title"] = request.title
@@ -183,10 +185,12 @@ def save_note(request: NoteRequest) -> dict[str, Any]:
         full_content = f"# {request.title}\n\n{request.content}"
 
     # Build metadata
+    now = datetime.now(timezone.utc).isoformat()
     metadata = {
         "type": "note",
         "repository": request.repository,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": now,
+        "updated_at": now,
     }
     if request.title:
         metadata["title"] = request.title
@@ -302,8 +306,6 @@ def save_session_summary(request: SessionSummaryRequest) -> dict[str, Any]:
         repository: Repository name (default: "global")
         initiative: Optional initiative to tag
     """
-    from datetime import timezone
-
     logger.info(f"Save session summary: repository={request.repository}, files={len(request.changed_files)}")
 
     # Scrub secrets from summary
@@ -318,10 +320,12 @@ def save_session_summary(request: SessionSummaryRequest) -> dict[str, Any]:
         content += f"\n\nChanged files: {', '.join(request.changed_files)}"
 
     # Build metadata
+    now = datetime.now(timezone.utc).isoformat()
     metadata = {
         "type": "session_summary",
         "repository": request.repository,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
+        "updated_at": now,
         "status": "active",
         "source": "auto-capture",
     }

@@ -17,6 +17,7 @@ from src.ast.models import (
     FunctionSignature,
     ImportInfo,
     ParameterInfo,
+    TriggerInfo,
 )
 
 
@@ -175,17 +176,20 @@ class PythonExtractor(LanguageExtractor):
         for node in root.children:
             func_node = None
             decorators = []
+            triggers = []
 
             if node.type == "function_definition":
                 func_node = node
             elif node.type == "decorated_definition":
                 func_node = self.find_child(node, "function_definition")
                 decorators = self._extract_decorators(node, source)
+                triggers = self._extract_triggers(node, source)
 
             if func_node:
                 sig = self._extract_function_signature(func_node, source)
                 if sig:
                     sig.decorators = decorators
+                    sig.triggers = triggers
                     functions.append(sig)
 
         return functions
@@ -478,6 +482,102 @@ class PythonExtractor(LanguageExtractor):
                         decorators.append(text)
                         break
         return decorators
+
+    def _extract_triggers(self, node: Node, source: str) -> list[TriggerInfo]:
+        """
+        Extract HTTP route or CLI command triggers from decorators.
+
+        Supports:
+        - FastAPI: @app.get("/path"), @router.post("/path")
+        - Flask: @app.route("/path", methods=["GET"]), @bp.route(...)
+        - Click: @click.command(), @app.cli.command()
+        - Typer: @app.command()
+        """
+        triggers = []
+
+        for child in node.children:
+            if child.type != "decorator":
+                continue
+
+            # Get the full decorator text for analysis
+            deco_text = self.get_node_text(child, source)
+
+            # Find the call node to extract arguments
+            call_node = self.find_child(child, "call")
+            if not call_node:
+                continue
+
+            # Get the function being called (e.g., "app.get", "router.post")
+            func_node = self.find_child(call_node, "attribute")
+            if not func_node:
+                func_node = self.find_child(call_node, "identifier")
+            if not func_node:
+                continue
+
+            func_text = self.get_node_text(func_node, source)
+
+            # Extract arguments
+            args_node = self.find_child(call_node, "argument_list")
+            route = None
+            methods = []
+
+            if args_node:
+                # First positional argument is usually the route
+                for arg in args_node.children:
+                    if arg.type == "string":
+                        route = self.get_node_text(arg, source).strip("'\"")
+                        break
+                    elif arg.type == "keyword_argument":
+                        # Look for methods=["GET", "POST"]
+                        key = self.find_child(arg, "identifier")
+                        if key and self.get_node_text(key, source) == "methods":
+                            list_node = self.find_child(arg, "list")
+                            if list_node:
+                                for item in list_node.children:
+                                    if item.type == "string":
+                                        methods.append(self.get_node_text(item, source).strip("'\""))
+
+            # Detect HTTP triggers
+            http_methods = {"get", "post", "put", "delete", "patch", "head", "options"}
+            func_lower = func_text.lower()
+
+            # FastAPI style: @app.get("/path"), @router.post("/path")
+            for method in http_methods:
+                if func_lower.endswith(f".{method}"):
+                    triggers.append(TriggerInfo(
+                        trigger_type="http",
+                        method=method.upper(),
+                        route=route or "/",
+                    ))
+                    break
+
+            # Flask style: @app.route("/path", methods=["GET"])
+            if ".route" in func_lower or func_lower == "route":
+                if methods:
+                    for method in methods:
+                        triggers.append(TriggerInfo(
+                            trigger_type="http",
+                            method=method.upper(),
+                            route=route or "/",
+                        ))
+                elif route:
+                    # Default to GET if no methods specified
+                    triggers.append(TriggerInfo(
+                        trigger_type="http",
+                        method="GET",
+                        route=route,
+                    ))
+
+            # Click/Typer CLI triggers
+            if "click.command" in func_lower or "typer.command" in func_lower or ".command" in func_lower:
+                # Extract command name from decorator arg or use function name
+                cmd_name = route  # Click uses first arg as command name sometimes
+                triggers.append(TriggerInfo(
+                    trigger_type="cli",
+                    command=cmd_name,
+                ))
+
+        return triggers
 
     def _extract_docstring(self, node: Node, source: str) -> Optional[str]:
         """Extract docstring from a function or class."""

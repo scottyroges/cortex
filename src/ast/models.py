@@ -29,6 +29,20 @@ class ParameterInfo:
 
 
 @dataclass
+class TriggerInfo:
+    """Represents an HTTP route or CLI command trigger."""
+
+    trigger_type: str  # "http" or "cli"
+    # HTTP triggers
+    method: Optional[str] = None  # GET, POST, PUT, DELETE, etc.
+    route: Optional[str] = None  # /v1/ingest, /api/users/:id
+    # CLI triggers
+    command: Optional[str] = None  # command name
+    args: list[str] = field(default_factory=list)  # positional arguments
+    options: list[str] = field(default_factory=list)  # flags/options
+
+
+@dataclass
 class FunctionSignature:
     """Represents a function or method signature."""
 
@@ -39,6 +53,7 @@ class FunctionSignature:
     is_method: bool = False  # True if defined inside a class
     decorators: list[str] = field(default_factory=list)
     docstring: Optional[str] = None
+    triggers: list[TriggerInfo] = field(default_factory=list)  # HTTP routes or CLI commands
 
 
 @dataclass

@@ -1339,7 +1339,8 @@ class TestTypeFilter:
 
     def test_invalid_types_filtered_out(self):
         """Test that invalid types are filtered out with warning."""
-        from src.tools.search import VALID_TYPES, search_cortex
+        from src.documents import ALL_DOCUMENT_TYPES
+        from src.tools.search import search_cortex
         import json
         from unittest.mock import patch, MagicMock
 

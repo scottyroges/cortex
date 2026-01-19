@@ -199,6 +199,7 @@ def store_skeleton(
     """
     doc_id = f"{repo_id}:skeleton:{branch}"
 
+    now = datetime.now(timezone.utc).isoformat()
     collection.upsert(
         ids=[doc_id],
         documents=[tree_output],
@@ -207,7 +208,8 @@ def store_skeleton(
                 "type": "skeleton",
                 "repository": repo_id,
                 "branch": branch,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now,
+                "updated_at": now,
                 "total_files": stats.get("total_files", 0),
                 "total_dirs": stats.get("total_dirs", 0),
             }

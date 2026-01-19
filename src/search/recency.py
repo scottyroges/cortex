@@ -8,6 +8,8 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
+from src.documents import RECENCY_BOOSTED_TYPES
+
 
 def apply_recency_boost(
     results: list[dict[str, Any]],
@@ -27,7 +29,7 @@ def apply_recency_boost(
         results: List of reranked results with 'rerank_score' and 'meta'
         half_life_days: Days until boost decays to ~0.5 (default 30)
         min_boost: Minimum boost factor to prevent old docs from disappearing (default 0.5)
-        boost_types: Document types to boost (default: {"note", "session_summary"})
+        boost_types: Document types to boost (default: RECENCY_BOOSTED_TYPES)
 
     Returns:
         Results with adjusted scores, re-sorted by boosted score
@@ -36,7 +38,7 @@ def apply_recency_boost(
         return results
 
     if boost_types is None:
-        boost_types = {"note", "session_summary"}
+        boost_types = RECENCY_BOOSTED_TYPES
 
     now = datetime.now(timezone.utc)
     boosted_results = []

@@ -43,6 +43,13 @@ const docType = computed(() => (document.value?.metadata?.type as string) || 'un
 const isEditable = computed(() => docType.value in EDITABLE_FIELDS)
 const editableFields = computed(() => EDITABLE_FIELDS[docType.value] || new Set())
 
+// Get timestamp with fallback for legacy documents
+const documentTimestamp = computed(() => {
+  if (!document.value?.metadata) return undefined
+  const meta = document.value.metadata
+  return (meta.created_at || meta.updated_at) as string | undefined
+})
+
 async function loadDocument(id: string) {
   loading.value = true
   error.value = null
@@ -260,10 +267,16 @@ function removeFile(file: string) {
             <span class="text-gray-500">Repository:</span>
             <span class="ml-2 text-gray-300">{{ document.metadata.repository }}</span>
           </div>
-          <div v-if="document.metadata.created_at">
+          <div v-if="documentTimestamp">
             <span class="text-gray-500">Created:</span>
             <span class="ml-2 text-gray-300">
-              {{ formatTimestamp(document.metadata.created_at as string) }}
+              {{ formatTimestamp(documentTimestamp) }}
+            </span>
+          </div>
+          <div v-if="document.metadata.updated_at && document.metadata.updated_at !== document.metadata.created_at">
+            <span class="text-gray-500">Updated:</span>
+            <span class="ml-2 text-gray-300">
+              {{ formatTimestamp(document.metadata.updated_at as string) }}
             </span>
           </div>
           <div v-if="document.metadata.status">

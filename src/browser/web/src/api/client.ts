@@ -175,7 +175,9 @@ export class CortexClient {
       doc_type: (doc.metadata.type as string) || 'unknown',
       repository: (doc.metadata.repository as string) || 'unknown',
       title: generateDisplayTitle(doc.metadata),
-      created_at: doc.metadata.created_at as string | undefined,
+      // Use created_at, with fallback for legacy documents
+      created_at: (doc.metadata.created_at || doc.metadata.updated_at) as string | undefined,
+      updated_at: doc.metadata.updated_at as string | undefined,
       status: doc.metadata.status as string | undefined,
       initiative_name: doc.metadata.initiative_name as string | undefined,
       last_validation_result: doc.metadata.last_validation_result as string | undefined,

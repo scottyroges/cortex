@@ -1,15 +1,19 @@
 """
 Notes Tools
 
-MCP tools for saving notes and session summaries.
+MCP tools for saving notes, insights, and session summaries.
+
+Document types defined in src.documents:
+- note: Decisions, documentation, learnings
+- insight: Understanding anchored to specific files
+- session_summary: End-of-session context capture
 """
 
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
-
 from pathlib import Path
+from typing import Optional, TYPE_CHECKING
 
 from logging_config import get_logger
 from src.git import get_current_branch, get_head_commit
@@ -17,6 +21,9 @@ from src.ingest.walker import compute_file_hash
 from src.security import scrub_secrets
 from src.tools.initiative_utils import find_initiative, resolve_initiative
 from src.tools.services import CONFIG, get_collection, get_repo_path, get_searcher
+
+if TYPE_CHECKING:
+    from src.documents import NoteDoc, InsightDoc, SessionSummaryDoc
 
 logger = get_logger("tools.notes")
 
@@ -85,6 +92,7 @@ def save_note_to_cortex(
             "repository": repo,
             "branch": branch,
             "created_at": timestamp,
+            "updated_at": timestamp,
             # Staleness tracking
             "verified_at": timestamp,
             "status": "active",
@@ -185,6 +193,7 @@ def session_summary_to_cortex(
             "branch": branch,
             "files": json.dumps(changed_files),
             "created_at": timestamp,
+            "updated_at": timestamp,
             # Staleness tracking
             "status": "active",
         }
@@ -350,6 +359,7 @@ def insight_to_cortex(
             "repository": repo,
             "branch": branch,
             "created_at": timestamp,
+            "updated_at": timestamp,
             # Staleness tracking
             "verified_at": timestamp,
             "status": "active",
@@ -464,9 +474,13 @@ def validate_insight(
                 "error": f"Document {insight_id} is not an insight (type={meta.get('type')})",
             })
 
-        # Update verification timestamp
+        # Update timestamps
         meta["verified_at"] = timestamp
+        meta["updated_at"] = timestamp
         meta["last_validation_result"] = validation_result
+        # Backfill created_at if missing
+        if not meta.get("created_at"):
+            meta["created_at"] = timestamp
         if notes:
             meta["validation_notes"] = notes
 

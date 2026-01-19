@@ -16,6 +16,7 @@ export interface DocumentSummary {
   repository: string
   title?: string
   created_at?: string
+  updated_at?: string
   status?: string
   initiative_name?: string
   last_validation_result?: string

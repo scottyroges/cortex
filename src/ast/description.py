@@ -132,6 +132,7 @@ def _fallback_description(file_path: str, language: str, exports: list[str]) -> 
     Returns:
         Basic description string
     """
+    logger.info(f"Using fallback description for {file_path} (no LLM provider)")
     if exports:
         export_list = ", ".join(exports[:5])
         if len(exports) > 5:

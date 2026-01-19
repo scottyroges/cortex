@@ -9,26 +9,10 @@ Philosophy: "Code can be grepped. Understanding cannot."
 
 from typing import Any
 
+from src.documents import TYPE_MULTIPLIERS
 
-# Default type multipliers
-# Insights are most valuable (unique understanding tied to code)
-# Notes and session_summaries capture decisions and context
-# Navigation types (file_metadata, entry_point, data_contract) are high value
-DEFAULT_TYPE_MULTIPLIERS = {
-    # Understanding (irreplaceable - grep can't find this)
-    "insight": 2.0,
-    "note": 1.5,
-    "session_summary": 1.5,
-    # Navigation (high value - tells agent where to look)
-    "entry_point": 1.4,
-    "file_metadata": 1.3,
-    "data_contract": 1.3,
-    "dependency": 1.0,
-    # Context
-    "tech_stack": 1.2,
-    "skeleton": 1.0,
-    "initiative": 1.0,
-}
+# Re-export for backwards compatibility
+DEFAULT_TYPE_MULTIPLIERS = TYPE_MULTIPLIERS
 
 
 def apply_type_boost(

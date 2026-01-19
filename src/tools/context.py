@@ -65,6 +65,7 @@ def set_repo_context(
                 "type": "tech_stack",
                 "repository": repository,
                 "branch": branch,
+                "created_at": timestamp,
                 "updated_at": timestamp,
             }],
         )
@@ -140,6 +141,7 @@ def set_initiative(
                 "initiative_name": name,
                 "initiative_status": status or "",
                 "branch": branch,
+                "created_at": timestamp,
                 "updated_at": timestamp,
             }],
         )

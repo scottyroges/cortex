@@ -87,33 +87,33 @@ class ClaudeCLIProvider(LLMProvider):
 
         # Use summarizer proxy if available (Docker mode)
         if SUMMARIZER_URL:
-            return self._generate_via_proxy(prompt, model, config.timeout, start_time)
+            return self._generate_via_proxy(prompt, model, config.timeout, start_time, config.max_tokens)
 
         # Otherwise use local CLI
         return self._generate_via_cli(prompt, model, config.timeout, start_time)
 
     def _generate_via_proxy(
-        self, prompt: str, model: str, timeout: int, start_time: float
+        self, prompt: str, model: str, timeout: int, start_time: float, max_tokens: int = 1024
     ) -> LLMResponse:
-        """Generate completion via the summarizer HTTP proxy."""
+        """Generate completion via the summarizer HTTP proxy using /generate endpoint."""
         try:
             result = http_json_post(
-                f"{SUMMARIZER_URL}/summarize",
-                json={"transcript": prompt, "model": model},
+                f"{SUMMARIZER_URL}/generate",
+                json={"prompt": prompt, "model": model, "max_tokens": max_tokens},
                 timeout=timeout,
             )
 
             latency_ms = (time.time() - start_time) * 1000
 
             if "error" in result:
-                raise LLMResponseError(f"Summarizer proxy error: {result['error']}")
+                raise LLMResponseError(f"Proxy error: {result['error']}")
 
-            summary = result.get("summary", "")
-            if not summary:
-                raise LLMResponseError("Summarizer proxy returned empty response")
+            text = result.get("text", "")
+            if not text:
+                raise LLMResponseError("Proxy returned empty response")
 
             return LLMResponse(
-                text=summary,
+                text=text,
                 model=model,
                 tokens_used=0,
                 latency_ms=latency_ms,
@@ -205,14 +205,32 @@ class ClaudeCLIProvider(LLMProvider):
 
         # Use proxy if available - it has its own summarization prompt
         if SUMMARIZER_URL:
-            config = LLMConfig(timeout=60)
-            response = self._generate_via_proxy(
-                transcript_text,
-                self.default_model,
-                config.timeout,
-                time.time(),
-            )
-            return response.text.strip()
+            return self._summarize_via_proxy(transcript_text, self.default_model)
 
         # Otherwise use the parent class implementation
         return super().summarize_session(transcript_text, max_chars)
+
+    def _summarize_via_proxy(self, transcript: str, model: str) -> str:
+        """Use the /summarize endpoint which has its own optimized prompt."""
+        start_time = time.time()
+        try:
+            result = http_json_post(
+                f"{SUMMARIZER_URL}/summarize",
+                json={"transcript": transcript, "model": model},
+                timeout=60,
+            )
+
+            if "error" in result:
+                raise LLMResponseError(f"Summarizer proxy error: {result['error']}")
+
+            summary = result.get("summary", "")
+            if not summary:
+                raise LLMResponseError("Summarizer proxy returned empty response")
+
+            latency_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Session summarized via proxy in {latency_ms:.0f}ms")
+            return summary.strip()
+
+        except Exception as e:
+            logger.error(f"Summarization via proxy failed: {e}")
+            raise

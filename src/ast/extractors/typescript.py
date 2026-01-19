@@ -18,6 +18,7 @@ from src.ast.models import (
     FunctionSignature,
     ImportInfo,
     ParameterInfo,
+    TriggerInfo,
 )
 
 
@@ -266,6 +267,9 @@ class TypeScriptExtractor(LanguageExtractor):
         functions = []
         root = tree.root_node
 
+        # HTTP methods for Next.js App Router detection
+        http_methods = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+
         for node in root.children:
             if node.type == "function_declaration":
                 func = self._extract_function(node, source)
@@ -277,6 +281,13 @@ class TypeScriptExtractor(LanguageExtractor):
                 if func_node:
                     func = self._extract_function(func_node, source)
                     if func:
+                        # Check for Next.js-style HTTP method exports
+                        if func.name in http_methods:
+                            func.triggers = [TriggerInfo(
+                                trigger_type="http",
+                                method=func.name,
+                                route="[dynamic]",  # Route comes from file path
+                            )]
                         functions.append(func)
                 # Also check for arrow functions in lexical_declaration
                 lex_node = self.find_child(node, "lexical_declaration")
@@ -286,11 +297,30 @@ class TypeScriptExtractor(LanguageExtractor):
                         if arrow:
                             name_node = self.find_child(decl, "identifier")
                             if name_node:
-                                func = self._extract_arrow_function(
-                                    arrow, self.get_node_text(name_node, source), source
-                                )
+                                name = self.get_node_text(name_node, source)
+                                func = self._extract_arrow_function(arrow, name, source)
                                 if func:
+                                    # Check for Next.js-style HTTP method exports
+                                    if name in http_methods:
+                                        func.triggers = [TriggerInfo(
+                                            trigger_type="http",
+                                            method=name,
+                                            route="[dynamic]",
+                                        )]
                                     functions.append(func)
+
+        # Also extract triggers from Express-style route definitions
+        express_triggers = self._extract_express_routes(root, source)
+        if express_triggers:
+            # Attach to first function or create a placeholder
+            if functions:
+                functions[0].triggers.extend(express_triggers)
+
+        # Extract Commander CLI commands
+        cli_triggers = self._extract_commander_commands(root, source)
+        if cli_triggers:
+            if functions:
+                functions[0].triggers.extend(cli_triggers)
 
         return functions
 
@@ -515,6 +545,100 @@ class TypeScriptExtractor(LanguageExtractor):
             fields=fields,
             source_text=self.get_node_text(node, source),
         )
+
+    def _extract_express_routes(self, root: Node, source: str) -> list[TriggerInfo]:
+        """
+        Extract Express/Fastify-style route definitions.
+
+        Looks for patterns like:
+        - router.get("/path", handler)
+        - app.post("/api/users", handler)
+        - router.route("/path").get(handler).post(handler)
+        """
+        triggers = []
+        http_methods = {"get", "post", "put", "delete", "patch", "head", "options"}
+
+        for node in self.walk_tree(root, "call_expression"):
+            # Get the function being called
+            func_node = self.find_child(node, "member_expression")
+            if not func_node:
+                continue
+
+            func_text = self.get_node_text(func_node, source).lower()
+
+            # Check if it's a route method call (e.g., router.get, app.post)
+            method = None
+            for http_method in http_methods:
+                if func_text.endswith(f".{http_method}"):
+                    method = http_method.upper()
+                    break
+
+            if not method:
+                continue
+
+            # Extract the route from arguments
+            args_node = self.find_child(node, "arguments")
+            if not args_node:
+                continue
+
+            # First argument is typically the route path
+            route = None
+            for arg in args_node.children:
+                if arg.type == "string":
+                    route = self._extract_string_content(arg, source)
+                    break
+                elif arg.type == "template_string":
+                    # Template strings like `/api/${version}/users`
+                    route = self.get_node_text(arg, source)
+                    break
+
+            if route:
+                triggers.append(TriggerInfo(
+                    trigger_type="http",
+                    method=method,
+                    route=route,
+                ))
+
+        return triggers
+
+    def _extract_commander_commands(self, root: Node, source: str) -> list[TriggerInfo]:
+        """
+        Extract Commander.js CLI command definitions.
+
+        Looks for patterns like:
+        - program.command("name")
+        - .command("name").description("desc")
+        """
+        triggers = []
+
+        for node in self.walk_tree(root, "call_expression"):
+            func_node = self.find_child(node, "member_expression")
+            if not func_node:
+                continue
+
+            func_text = self.get_node_text(func_node, source).lower()
+
+            if ".command" not in func_text:
+                continue
+
+            # Extract command name from arguments
+            args_node = self.find_child(node, "arguments")
+            if not args_node:
+                continue
+
+            for arg in args_node.children:
+                if arg.type == "string":
+                    cmd_name = self._extract_string_content(arg, source)
+                    # Commander commands can include args like "deploy <env>"
+                    cmd_parts = cmd_name.split()
+                    triggers.append(TriggerInfo(
+                        trigger_type="cli",
+                        command=cmd_parts[0] if cmd_parts else cmd_name,
+                        args=cmd_parts[1:] if len(cmd_parts) > 1 else [],
+                    ))
+                    break
+
+        return triggers
 
     def detect_entry_point(self, tree: Tree, source: str, file_path: str) -> Optional[str]:
         """Detect if file is an entry point."""

@@ -63,7 +63,7 @@ MCP_TOOL_SCHEMAS = [
                 "types": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Filter by document types. Valid: skeleton, note, session_summary, insight, tech_stack, initiative, file_metadata, data_contract, entry_point, dependency. Example: ['note', 'insight'] for understanding-only search.",
+                    "description": "Filter by document types. Valid: skeleton, note, session_summary, insight, tech_stack, initiative, file_metadata, data_contract, entry_point, dependency, idiom. Example: ['note', 'insight'] for understanding-only search.",
                 },
             },
             "required": ["query"],

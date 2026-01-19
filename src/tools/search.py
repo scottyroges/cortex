@@ -10,6 +10,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from logging_config import get_logger
+from src.documents import (
+    ALL_DOCUMENT_TYPES,
+    BRANCH_FILTERED_TYPES,
+    METADATA_ONLY_TYPES,
+    SEARCH_PRESETS,
+)
 from src.git import get_current_branch
 from src.search import apply_recency_boost, apply_type_boost
 from src.tools.services import CONFIG, get_collection, get_reranker, get_repo_path, get_searcher
@@ -80,7 +86,7 @@ def _filter_by_initiative(results: list, initiative_id: str, include_completed: 
         if result_init_id == initiative_id:
             filtered.append(result)
         # Include metadata types that aren't tagged (belong to whole repo)
-        elif meta.get("type") in ("file_metadata", "data_contract", "entry_point", "dependency", "skeleton") and not result_init_id:
+        elif meta.get("type") in METADATA_ONLY_TYPES and not result_init_id:
             filtered.append(result)
 
     return filtered
@@ -159,39 +165,9 @@ def build_branch_aware_filter(
     return branch_filter
 
 
-# Valid document types for filtering
-VALID_TYPES = {
-    # Metadata-first types
-    "file_metadata",
-    "data_contract",
-    "entry_point",
-    "dependency",
-    # Semantic memory
-    "note",
-    "session_summary",
-    "insight",
-    # Context
-    "skeleton",
-    "tech_stack",
-    "initiative",
-}
-
-# Types that require branch filtering (code-related metadata)
-BRANCH_FILTERED_TYPES = {"skeleton", "file_metadata", "data_contract", "entry_point", "dependency"}
-
-# Search presets for common query patterns
-SEARCH_PRESETS = {
-    # "Why did we do X?" - understanding queries
-    "understanding": ["insight", "note", "session_summary"],
-    # "Where is X?" - navigation queries
-    "navigation": ["file_metadata", "entry_point", "data_contract"],
-    # "What's the structure?" - architecture queries
-    "structure": ["file_metadata", "dependency", "skeleton"],
-    # "Where is this error coming from?" - debugging
-    "trace": ["entry_point", "dependency", "data_contract"],
-    # All semantic memory (no code)
-    "memory": ["insight", "note", "session_summary", "file_metadata"],
-}
+# Valid types imported from src.documents: ALL_DOCUMENT_TYPES
+# Branch-filtered types imported from src.documents: BRANCH_FILTERED_TYPES
+# Search presets imported from src.documents: SEARCH_PRESETS
 
 
 @dataclass
@@ -623,10 +599,11 @@ def search_cortex(
 
     # Validate types if provided
     if types:
-        invalid_types = set(types) - VALID_TYPES
+        valid_types_set = set(ALL_DOCUMENT_TYPES)
+        invalid_types = set(types) - valid_types_set
         if invalid_types:
-            logger.warning(f"Invalid types ignored: {invalid_types}. Valid: {VALID_TYPES}")
-            types = [t for t in types if t in VALID_TYPES]
+            logger.warning(f"Invalid types ignored: {invalid_types}. Valid: {ALL_DOCUMENT_TYPES}")
+            types = [t for t in types if t in valid_types_set]
             if not types:
                 types = None  # Fall back to no filtering if all invalid
 

@@ -17,6 +17,7 @@ from src.ast.models import (
     FunctionSignature,
     ImportInfo,
     ParameterInfo,
+    TriggerInfo,
 )
 
 
@@ -186,7 +187,16 @@ class KotlinExtractor(LanguageExtractor):
             if node.type == "function_declaration":
                 func = self._extract_function(node, source, is_method=False)
                 if func:
+                    # Extract Spring annotation triggers
+                    triggers = self._extract_spring_triggers(node, source)
+                    if triggers:
+                        func.triggers = triggers
                     functions.append(func)
+
+        # Also extract Ktor DSL routes
+        ktor_triggers = self._extract_ktor_routes(root, source)
+        if ktor_triggers and functions:
+            functions[0].triggers.extend(ktor_triggers)
 
         return functions
 
@@ -389,6 +399,126 @@ class KotlinExtractor(LanguageExtractor):
                 type_annotation=type_annotation or "Any",
             )
         return None
+
+    def _extract_spring_triggers(self, node: Node, source: str) -> list[TriggerInfo]:
+        """
+        Extract Spring annotation triggers from a function declaration.
+
+        Looks for patterns like:
+        - @GetMapping("/path")
+        - @PostMapping("/users")
+        - @RequestMapping("/api", method = RequestMethod.GET)
+        - @DeleteMapping
+        """
+        triggers = []
+
+        # Spring mapping annotations to HTTP methods
+        mapping_annotations = {
+            "GetMapping": "GET",
+            "PostMapping": "POST",
+            "PutMapping": "PUT",
+            "DeleteMapping": "DELETE",
+            "PatchMapping": "PATCH",
+            "RequestMapping": None,  # Method specified in annotation
+        }
+
+        # Look for annotations on the function
+        modifiers = self.find_child(node, "modifiers")
+        if not modifiers:
+            return triggers
+
+        for child in modifiers.children:
+            if child.type == "annotation":
+                # Get the annotation text
+                ann_text = self.get_node_text(child, source)
+
+                for ann_name, http_method in mapping_annotations.items():
+                    if ann_name in ann_text:
+                        # Extract route from annotation arguments
+                        route = self._extract_annotation_route(ann_text)
+
+                        # For RequestMapping, try to extract method
+                        method = http_method
+                        if ann_name == "RequestMapping":
+                            if "GET" in ann_text.upper():
+                                method = "GET"
+                            elif "POST" in ann_text.upper():
+                                method = "POST"
+                            elif "PUT" in ann_text.upper():
+                                method = "PUT"
+                            elif "DELETE" in ann_text.upper():
+                                method = "DELETE"
+                            else:
+                                method = "GET"  # Default
+
+                        triggers.append(TriggerInfo(
+                            trigger_type="http",
+                            method=method,
+                            route=route or "/",
+                        ))
+                        break
+
+        return triggers
+
+    def _extract_annotation_route(self, ann_text: str) -> Optional[str]:
+        """Extract route path from annotation text like @GetMapping("/users")."""
+        # Look for quoted string in annotation
+        import re
+        match = re.search(r'["\']([^"\']+)["\']', ann_text)
+        if match:
+            return match.group(1)
+        return None
+
+    def _extract_ktor_routes(self, root: Node, source: str) -> list[TriggerInfo]:
+        """
+        Extract Ktor DSL route definitions.
+
+        Looks for patterns like:
+        - get("/path") { ... }
+        - post("/users") { ... }
+        - route("/api") { get { ... } }
+        - routing { get("/path") { ... } }
+        """
+        triggers = []
+        http_methods = {"get", "post", "put", "delete", "patch", "head", "options"}
+
+        for node in self.walk_tree(root, "call_expression"):
+            # Get the function name being called
+            func_node = self.find_child(node, "identifier")
+            if not func_node:
+                # Try simple_identifier
+                func_node = self.find_child(node, "simple_identifier")
+            if not func_node:
+                continue
+
+            func_name = self.get_node_text(func_node, source).lower()
+
+            if func_name not in http_methods:
+                continue
+
+            # Extract route from arguments
+            route = None
+            call_suffix = self.find_child(node, "call_suffix")
+            if call_suffix:
+                value_args = self.find_child(call_suffix, "value_arguments")
+                if value_args:
+                    for arg in value_args.children:
+                        if arg.type == "value_argument":
+                            # Get string literal
+                            for arg_child in self.walk_tree(arg, "string_literal"):
+                                text = self.get_node_text(arg_child, source)
+                                route = text.strip('"\'')
+                                break
+                        if route:
+                            break
+
+            triggers.append(TriggerInfo(
+                trigger_type="http",
+                method=func_name.upper(),
+                route=route or "/",
+            ))
+
+        return triggers
 
     def detect_entry_point(self, tree: Tree, source: str, file_path: str) -> Optional[str]:
         """Detect if file is an entry point."""

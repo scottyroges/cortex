@@ -277,7 +277,7 @@ class MetadataFileProcessor:
             Tuple of (processed_count, skipped_count, docs_created, errors)
         """
         # Import here to avoid circular imports
-        from src.ingest.metadata import ingest_file_metadata, build_dependencies
+        from src.ingest.metadata import ingest_file_metadata, build_dependencies, link_test_files
 
         # Clean up old code chunks before processing
         self._cleanup_old_code_chunks(files)
@@ -328,6 +328,9 @@ class MetadataFileProcessor:
                 results, self.collection, self.repo_id, self.branch
             )
             docs_created += dep_count
+
+            # Link test files to source files
+            link_test_files(results, self.collection, self.repo_id)
 
         return processed, skipped, docs_created, errors
 

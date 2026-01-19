@@ -4,7 +4,7 @@ Cortex HTTP Server
 FastAPI-based HTTP endpoints for browsing, API access, and MCP protocol.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -16,7 +16,7 @@ from src.http.browse import router as browse_router
 from src.http.mcp_protocol import router as mcp_router
 
 # Track server startup time
-_startup_time = datetime.utcnow().isoformat() + "Z"
+_startup_time = datetime.now(timezone.utc).isoformat()
 
 
 def get_startup_time() -> str:

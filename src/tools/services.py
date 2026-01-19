@@ -10,7 +10,7 @@ from typing import Optional
 import chromadb
 from anthropic import Anthropic
 
-from src.config import DEFAULT_CONFIG
+from src.config import get_full_config
 from src.git import is_git_repo
 from src.search import HybridSearcher, RerankerService
 from src.storage import get_chroma_client, get_or_create_collection
@@ -39,7 +39,8 @@ _reranker: Optional[RerankerService] = None
 _anthropic_client: Optional[Anthropic] = None
 
 # Runtime configuration (mutable)
-CONFIG = DEFAULT_CONFIG.copy()
+# Use get_full_config() to merge defaults, YAML config, and environment variables
+CONFIG = get_full_config()
 
 
 def get_collection() -> chromadb.Collection:

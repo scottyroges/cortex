@@ -378,6 +378,7 @@ def _set_focus(
             "repository": repository,
             "initiative_id": initiative_id,
             "initiative_name": initiative_name,
+            "created_at": timestamp,
             "updated_at": timestamp,
         }],
     )
