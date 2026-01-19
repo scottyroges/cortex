@@ -29,7 +29,7 @@ logger = get_logger("ingest.async")
 TASK_FILE = get_data_path() / "ingest_tasks.json"
 PROCESSING_INTERVAL = 5  # seconds between queue checks
 PROGRESS_BATCH_SIZE = 10  # Update progress every N files
-MAX_TASK_AGE_HOURS = 24  # Cleanup completed tasks after this
+MAX_TASK_AGE_MINUTES = 5  # Cleanup completed tasks after this (backstop)
 
 
 # =============================================================================
@@ -237,13 +237,24 @@ class IngestionTaskStore:
                     pending.append(IngestionTask.from_dict(task_data))
             return pending
 
-    def cleanup_old_tasks(self, max_age_hours: int = MAX_TASK_AGE_HOURS) -> int:
-        """Remove completed/failed tasks older than max_age_hours."""
+    def delete_task(self, task_id: str) -> bool:
+        """Delete a specific task. Returns True if deleted."""
+        with self._lock:
+            state = self._load()
+            if task_id in state.get("tasks", {}):
+                del state["tasks"][task_id]
+                self._save(state)
+                logger.debug(f"Deleted task {task_id}")
+                return True
+            return False
+
+    def cleanup_old_tasks(self, max_age_minutes: int = MAX_TASK_AGE_MINUTES) -> int:
+        """Remove completed/failed tasks older than max_age_minutes (backstop cleanup)."""
         from datetime import timedelta
 
         with self._lock:
             state = self._load()
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
             removed = 0
 
             tasks_to_remove = []
@@ -321,7 +332,7 @@ class IngestionWorker:
         return task.task_id
 
     def get_status(self, task_id: str) -> Optional[dict]:
-        """Get task status for polling."""
+        """Get task status for polling. Deletes completed/failed tasks after returning."""
         task = self._store.get_task(task_id)
         if task is None:
             return None
@@ -353,6 +364,10 @@ class IngestionWorker:
 
         if task.status == "failed" and task.error:
             response["error"] = task.error
+
+        # Clean up completed/failed tasks after returning result
+        if task.status in ("completed", "failed"):
+            self._store.delete_task(task_id)
 
         return response
 
