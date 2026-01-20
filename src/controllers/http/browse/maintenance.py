@@ -11,10 +11,10 @@ from pydantic import BaseModel
 
 from src.configs import get_logger
 from src.configs.services import get_collection, get_searcher
-from src.storage.gc import (
+from src.storage import (
+    cleanup_orphaned_dependencies,
     cleanup_orphaned_file_metadata,
     cleanup_orphaned_insights,
-    cleanup_orphaned_dependencies,
     purge_by_filters,
 )
 

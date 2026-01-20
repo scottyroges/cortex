@@ -25,7 +25,7 @@ from src.tools.notes.notes import save_memory, conclude_session, validate_insigh
 from src.tools.orient.orient import orient_session
 from src.tools.orient.recall import recall_recent_work
 from src.tools.search.search import search_cortex
-from src.tools.storage_manager.storage_manager import cleanup_storage, delete_document
+from src.tools.storage_tools.storage_tools import cleanup_storage, delete_document
 
 __all__ = [
     # Session

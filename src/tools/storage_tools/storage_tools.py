@@ -8,10 +8,11 @@ import json
 from typing import Literal, Optional
 
 from src.configs import get_logger
-from src.storage.gc import (
+from src.storage import (
+    cleanup_orphaned_dependencies,
     cleanup_orphaned_file_metadata,
     cleanup_orphaned_insights,
-    cleanup_orphaned_dependencies,
+    delete_document as delete_document_storage,
 )
 from src.configs.services import get_collection, get_searcher
 
@@ -89,7 +90,7 @@ def cleanup_storage(
         # Rebuild search index if we deleted anything
         if total_deleted > 0:
             get_searcher().build_index()
-            logger.info(f"Rebuilt search index after cleanup")
+            logger.info("Rebuilt search index after cleanup")
 
         response = {
             "status": "success",
@@ -143,32 +144,14 @@ def delete_document(
     try:
         collection = get_collection()
 
-        # Verify document exists
-        result = collection.get(ids=[document_id], include=["metadatas"])
+        # Call storage layer to delete
+        result = delete_document_storage(collection, document_id)
 
-        if not result["ids"]:
-            return json.dumps({
-                "status": "error",
-                "error": f"Document not found: {document_id}",
-            })
+        # Rebuild search index if deletion succeeded
+        if result.get("status") == "deleted":
+            get_searcher().build_index()
 
-        # Get document info for response
-        meta = result["metadatas"][0]
-        doc_type = meta.get("type", "unknown")
-
-        # Delete the document
-        collection.delete(ids=[document_id])
-
-        # Rebuild search index
-        get_searcher().build_index()
-
-        logger.info(f"Deleted document: {document_id} (type={doc_type})")
-
-        return json.dumps({
-            "status": "deleted",
-            "document_id": document_id,
-            "document_type": doc_type,
-        })
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Delete document error: {e}")

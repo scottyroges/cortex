@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from src.storage import get_or_create_collection
-from src.storage.gc import (
+from src.storage import (
+    cleanup_orphaned_dependencies,
     cleanup_orphaned_file_metadata,
     cleanup_orphaned_insights,
-    cleanup_orphaned_dependencies,
+    get_or_create_collection,
     purge_by_filters,
 )
 

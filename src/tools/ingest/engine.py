@@ -18,7 +18,7 @@ from src.external.git import get_current_branch, get_git_changed_files, get_head
 from src.tools.ingest.skeleton import generate_tree_structure, store_skeleton
 from src.tools.ingest.walker import compute_file_hash, get_changed_files, walk_codebase
 from src.external.llm import LLMProvider
-from src.storage.gc import delete_file_chunks
+from src.storage import delete_file_chunks
 
 logger = get_logger("ingest.engine")
 
