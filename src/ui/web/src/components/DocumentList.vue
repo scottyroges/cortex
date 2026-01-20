@@ -1,22 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import type { DocumentSummary, Stats } from '../types'
-import { client } from '../api/client'
+import { ref, computed } from 'vue'
+import type { DocumentSummary } from '../types'
+import { useBrowserStore } from '../stores'
 import TypeBadge from './TypeBadge.vue'
 
-const props = defineProps<{
-  stats: Stats | null
-  typeFilter: string | null
-  repoFilter: string | null
-}>()
+const browserStore = useBrowserStore()
 
-const emit = defineEmits<{
-  select: [doc: DocumentSummary]
-}>()
-
-const documents = ref<DocumentSummary[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
 const selectedId = ref<string | null>(null)
 
 // Sort state
@@ -26,7 +15,7 @@ const sortOrder = ref<'asc' | 'desc'>('desc')
 
 // Computed sorted documents
 const sortedDocuments = computed(() => {
-  const docs = [...documents.value]
+  const docs = [...browserStore.documents]
   const reverse = sortOrder.value === 'desc'
 
   docs.sort((a, b) => {
@@ -57,25 +46,9 @@ function toggleSortOrder() {
   sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc'
 }
 
-async function loadDocuments() {
-  loading.value = true
-  error.value = null
-  try {
-    documents.value = await client.listDocuments({
-      doc_type: props.typeFilter || undefined,
-      repository: props.repoFilter || undefined,
-      limit: 500,
-    })
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to load documents'
-  } finally {
-    loading.value = false
-  }
-}
-
 function selectDocument(doc: DocumentSummary) {
   selectedId.value = doc.id
-  emit('select', doc)
+  browserStore.selectDocument(doc)
 }
 
 function formatTime(dateStr?: string): string {
@@ -96,11 +69,6 @@ function formatTime(dateStr?: string): string {
     return ''
   }
 }
-
-watch([() => props.typeFilter, () => props.repoFilter], loadDocuments)
-onMounted(loadDocuments)
-
-defineExpose({ refresh: loadDocuments })
 </script>
 
 <template>
@@ -129,9 +97,9 @@ defineExpose({ refresh: loadDocuments })
     </div>
 
     <div class="flex-1 overflow-auto">
-      <div v-if="loading" class="p-4 text-gray-400">Loading...</div>
+      <div v-if="browserStore.documentsLoading" class="p-4 text-gray-400">Loading...</div>
 
-      <div v-else-if="error" class="p-4 text-red-400 text-sm">{{ error }}</div>
+      <div v-else-if="browserStore.documentsError" class="p-4 text-red-400 text-sm">{{ browserStore.documentsError }}</div>
 
       <div v-else-if="sortedDocuments.length === 0" class="p-4 text-gray-500 text-sm">
         No documents found

@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import type { Document, DocumentSummary } from '../types'
+import type { Document } from '../types'
 import { client } from '../api/client'
+import { useBrowserStore } from '../stores'
 import TypeBadge from './TypeBadge.vue'
 
-const props = defineProps<{
-  summary: DocumentSummary | null
-}>()
-
-const emit = defineEmits<{
-  documentDeleted: [id: string]
-  documentUpdated: [id: string]
-}>()
+const browserStore = useBrowserStore()
 
 const document = ref<Document | null>(null)
 const loading = ref(false)
@@ -37,7 +31,7 @@ const newFile = ref('')
 const EDITABLE_FIELDS: Record<string, Set<string>> = {
   note: new Set(['title', 'content', 'tags']),
   insight: new Set(['title', 'content', 'tags', 'files']),
-  commit: new Set(['content', 'files']),
+  session_summary: new Set(['content', 'files']),
 }
 
 const docType = computed(() => (document.value?.metadata?.type as string) || 'unknown')
@@ -65,9 +59,11 @@ async function loadDocument(id: string) {
 }
 
 watch(
-  () => props.summary?.id,
+  () => browserStore.selectedDoc?.id,
   (id) => {
     showRaw.value = false
+    editing.value = false
+    confirmingDelete.value = false
     if (id) {
       loadDocument(id)
     } else {
@@ -138,7 +134,7 @@ async function saveChanges() {
 
     await client.updateDocument(document.value.id, data)
     editing.value = false
-    emit('documentUpdated', document.value.id)
+    browserStore.onDocumentUpdated()
     // Reload the document to show updated data
     await loadDocument(document.value.id)
   } catch (e) {
@@ -166,10 +162,9 @@ async function executeDelete() {
 
   try {
     await client.deleteDocument(document.value.id)
-    const deletedId = document.value.id
     document.value = null
     confirmingDelete.value = false
-    emit('documentDeleted', deletedId)
+    browserStore.onDocumentDeleted()
   } catch (e) {
     deleteError.value = e instanceof Error ? e.message : 'Failed to delete document'
   } finally {
@@ -204,7 +199,7 @@ function removeFile(file: string) {
 
 <template>
   <div class="card h-full flex flex-col overflow-hidden">
-    <div v-if="!summary" class="p-4 text-gray-500 text-center flex-1 flex items-center justify-center">
+    <div v-if="!browserStore.selectedDoc" class="p-4 text-gray-500 text-center flex-1 flex items-center justify-center">
       Select a document to view details
     </div>
 

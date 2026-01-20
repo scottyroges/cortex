@@ -3,11 +3,10 @@ import { ref } from 'vue'
 import type { SearchResponse, SearchResult } from '../types'
 import { client } from '../api/client'
 import { getBestScore } from '../types'
+import { useBrowserStore } from '../stores'
 import TypeBadge from './TypeBadge.vue'
 
-const emit = defineEmits<{
-  selectResult: [result: SearchResult]
-}>()
+const browserStore = useBrowserStore()
 
 const query = ref('')
 const response = ref<SearchResponse | null>(null)
@@ -50,7 +49,7 @@ function toggleCollapsed() {
 }
 
 function selectResult(result: SearchResult) {
-  emit('selectResult', result)
+  browserStore.selectSearchResult(result)
 }
 
 function formatScore(scores: SearchResult['scores']): string {
