@@ -69,3 +69,52 @@ export function getBestScore(scores: SearchResultScores): number {
   if (scores.rrf !== undefined) return scores.rrf
   return 0
 }
+
+// Cleanup and Purge types
+
+export interface CleanupRequest {
+  repository: string
+  path: string
+  dry_run: boolean
+}
+
+export interface OrphanedResult {
+  count: number
+  deleted: number
+  orphaned_files?: string[]
+  orphaned_ids?: string[]
+  error?: string
+}
+
+export interface CleanupResult {
+  success: boolean
+  repository: string
+  dry_run: boolean
+  orphaned_file_metadata: OrphanedResult
+  orphaned_insights: OrphanedResult
+  orphaned_dependencies: OrphanedResult
+  total_orphaned: number
+  total_deleted: number
+}
+
+export interface PurgeFilters {
+  repository?: string
+  branch?: string
+  doc_type?: string
+  before_date?: string
+  after_date?: string
+}
+
+export interface PurgeRequest extends PurgeFilters {
+  dry_run: boolean
+}
+
+export interface PurgeResult {
+  success: boolean
+  dry_run: boolean
+  matched_count: number
+  deleted_count: number
+  sample_ids: string[]
+  filters_applied: PurgeFilters
+  error?: string
+}

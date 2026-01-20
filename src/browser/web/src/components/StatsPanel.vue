@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import type { Stats } from '../types'
 import { client } from '../api/client'
+import PurgeModal from './PurgeModal.vue'
 
 const props = defineProps<{
   activeTypeFilter?: string | null
@@ -16,6 +17,7 @@ const emit = defineEmits<{
 const stats = ref<Stats | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const showPurgeModal = ref(false)
 
 async function loadStats() {
   loading.value = true
@@ -40,6 +42,10 @@ function toggleRepoFilter(repo: string) {
 function clearFilters() {
   emit('filter-type', null)
   emit('filter-repo', null)
+}
+
+function onPurged() {
+  loadStats()
 }
 
 onMounted(loadStats)
@@ -102,6 +108,24 @@ defineExpose({ refresh: loadStats })
           </li>
         </ul>
       </div>
+
+      <!-- Manage Storage Button -->
+      <div class="mt-4 pt-4 border-t border-gray-700">
+        <button
+          class="w-full px-3 py-2 text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+          @click="showPurgeModal = true"
+        >
+          Manage Storage...
+        </button>
+      </div>
     </div>
+
+    <!-- Purge Modal -->
+    <PurgeModal
+      :show="showPurgeModal"
+      :stats="stats"
+      @close="showPurgeModal = false"
+      @purged="onPurged"
+    />
   </div>
 </template>

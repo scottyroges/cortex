@@ -3,7 +3,7 @@
  * Mirrors src/browser/client.py
  */
 
-import type { Stats, DocumentSummary, Document, SearchResponse } from '../types'
+import type { Stats, DocumentSummary, Document, SearchResponse, CleanupRequest, CleanupResult, PurgeRequest, PurgeResult } from '../types'
 
 /**
  * Generate a readable display title from document metadata.
@@ -240,6 +240,37 @@ export class CortexClient {
 
   async deleteDocument(docId: string): Promise<{ success: boolean; id: string }> {
     return this.mutate('/browse/delete', 'DELETE', { id: docId })
+  }
+
+  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    const url = new URL(path, this.baseUrl || window.location.origin)
+
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new APIError(response.status, errorText || response.statusText)
+      }
+      return await response.json()
+    } catch (error) {
+      if (error instanceof APIError) throw error
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new DaemonNotRunningError()
+      }
+      throw new CortexClientError(String(error))
+    }
+  }
+
+  async cleanup(request: CleanupRequest): Promise<CleanupResult> {
+    return this.post('/browse/cleanup', request as unknown as Record<string, unknown>)
+  }
+
+  async purge(request: PurgeRequest): Promise<PurgeResult> {
+    return this.post('/browse/purge', request as unknown as Record<string, unknown>)
   }
 }
 

@@ -653,3 +653,281 @@ class TestBrowseDeleteEndpoint:
         # Verify deletion
         result = collection.get(ids=["session_to_delete"])
         assert len(result["ids"]) == 0
+
+
+class TestBrowseCleanupEndpoint:
+    """Tests for POST /browse/cleanup endpoint."""
+
+    def test_cleanup_dry_run(self, browse_client, temp_chroma_client, temp_dir):
+        """Test cleanup in dry_run mode shows orphaned documents."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        # Add file_metadata for non-existent file
+        collection.add(
+            documents=["Orphaned file metadata"],
+            ids=["file_metadata:orphan.py"],
+            metadatas=[{
+                "type": "file_metadata",
+                "repository": "test-repo",
+                "file_path": "orphan.py",
+            }],
+        )
+
+        response = browse_client.post(
+            "/browse/cleanup",
+            json={
+                "repository": "test-repo",
+                "path": str(temp_dir),
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["dry_run"] is True
+        assert data["total_orphaned"] >= 1
+        assert data["total_deleted"] == 0
+
+    def test_cleanup_execute(self, browse_client, temp_chroma_client, temp_dir):
+        """Test cleanup actually deletes orphaned documents."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        # Add file_metadata for non-existent file
+        collection.add(
+            documents=["Orphaned file metadata"],
+            ids=["file_metadata:orphan.py"],
+            metadatas=[{
+                "type": "file_metadata",
+                "repository": "test-repo",
+                "file_path": "orphan.py",
+            }],
+        )
+
+        response = browse_client.post(
+            "/browse/cleanup",
+            json={
+                "repository": "test-repo",
+                "path": str(temp_dir),
+                "dry_run": False,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["dry_run"] is False
+        assert data["total_deleted"] >= 1
+
+        # Verify deletion
+        result = collection.get(ids=["file_metadata:orphan.py"])
+        assert len(result["ids"]) == 0
+
+    def test_cleanup_requires_path(self, browse_client):
+        """Test that cleanup requires path parameter."""
+        response = browse_client.post(
+            "/browse/cleanup",
+            json={
+                "repository": "test-repo",
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 400
+        assert "path" in response.json()["detail"].lower()
+
+    def test_cleanup_returns_breakdown(self, browse_client, temp_chroma_client, temp_dir):
+        """Test that cleanup returns breakdown by document type."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        # Add various orphaned document types
+        collection.add(
+            documents=["Orphaned file", "Orphaned insight", "Orphaned dep"],
+            ids=["file_metadata:orphan.py", "insight:orphan", "dep:orphan"],
+            metadatas=[
+                {"type": "file_metadata", "repository": "test", "file_path": "orphan.py"},
+                {"type": "insight", "repository": "test", "files": '["orphan.py"]'},
+                {"type": "dependency", "repository": "test", "file_path": "orphan.py"},
+            ],
+        )
+
+        response = browse_client.post(
+            "/browse/cleanup",
+            json={
+                "repository": "test",
+                "path": str(temp_dir),
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "orphaned_file_metadata" in data
+        assert "orphaned_insights" in data
+        assert "orphaned_dependencies" in data
+
+
+class TestBrowsePurgeEndpoint:
+    """Tests for POST /browse/purge endpoint."""
+
+    def test_purge_by_repository_dry_run(self, browse_client, temp_chroma_client):
+        """Test purge by repository in dry_run mode."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+        collection.add(
+            documents=["Doc from target repo", "Doc from other repo"],
+            ids=["target-doc", "other-doc"],
+            metadatas=[
+                {"type": "note", "repository": "target-repo"},
+                {"type": "note", "repository": "other-repo"},
+            ],
+        )
+
+        response = browse_client.post(
+            "/browse/purge",
+            json={
+                "repository": "target-repo",
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["dry_run"] is True
+        assert data["matched_count"] == 1
+        assert data["deleted_count"] == 0
+
+    def test_purge_by_type(self, browse_client, temp_chroma_client):
+        """Test purge by document type."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+        collection.add(
+            documents=["Note 1", "Note 2", "Insight 1"],
+            ids=["note1", "note2", "insight1"],
+            metadatas=[
+                {"type": "note", "repository": "test"},
+                {"type": "note", "repository": "test"},
+                {"type": "insight", "repository": "test"},
+            ],
+        )
+
+        response = browse_client.post(
+            "/browse/purge",
+            json={
+                "doc_type": "note",
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["matched_count"] == 2
+
+    def test_purge_execute(self, browse_client, temp_chroma_client):
+        """Test purge actually deletes documents."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+        collection.add(
+            documents=["To purge"],
+            ids=["purge-me"],
+            metadatas=[{"type": "note", "repository": "purge-repo"}],
+        )
+
+        response = browse_client.post(
+            "/browse/purge",
+            json={
+                "repository": "purge-repo",
+                "dry_run": False,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted_count"] == 1
+
+        # Verify deletion
+        result = collection.get(ids=["purge-me"])
+        assert len(result["ids"]) == 0
+
+    def test_purge_requires_filter(self, browse_client):
+        """Test that purge requires at least one filter."""
+        response = browse_client.post(
+            "/browse/purge",
+            json={
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 400
+        assert "filter" in response.json()["detail"].lower()
+
+    def test_purge_with_date_filters(self, browse_client, temp_chroma_client):
+        """Test purge with date range filters."""
+        from datetime import datetime, timedelta, timezone
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        old_date = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        new_date = datetime.now(timezone.utc).isoformat()
+
+        collection.add(
+            documents=["Old doc", "New doc"],
+            ids=["old", "new"],
+            metadatas=[
+                {"type": "note", "repository": "test", "created_at": old_date},
+                {"type": "note", "repository": "test", "created_at": new_date},
+            ],
+        )
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        response = browse_client.post(
+            "/browse/purge",
+            json={
+                "repository": "test",
+                "before_date": cutoff,
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["matched_count"] == 1  # Only old doc
+
+    def test_purge_returns_sample_ids(self, browse_client, temp_chroma_client):
+        """Test that purge returns sample IDs of matched documents."""
+        from src.storage import get_or_create_collection
+
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+        collection.add(
+            documents=["Doc 1", "Doc 2", "Doc 3"],
+            ids=["doc1", "doc2", "doc3"],
+            metadatas=[
+                {"type": "note", "repository": "sample-repo"},
+                {"type": "note", "repository": "sample-repo"},
+                {"type": "note", "repository": "sample-repo"},
+            ],
+        )
+
+        response = browse_client.post(
+            "/browse/purge",
+            json={
+                "repository": "sample-repo",
+                "dry_run": True,
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["sample_ids"]) == 3
+        assert "doc1" in data["sample_ids"]

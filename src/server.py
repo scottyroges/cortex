@@ -18,8 +18,10 @@ from mcp.server.fastmcp import FastMCP
 
 from logging_config import get_logger, setup_logging
 from src.tools import (
+    cleanup_storage,
     configure_cortex,
     conclude_session,
+    delete_document,
     get_skeleton,
     ingest_codebase,
     manage_initiative,
@@ -38,7 +40,7 @@ logger = get_logger("server")
 
 mcp = FastMCP("Cortex")
 
-# --- Register Tools (10 consolidated tools) ---
+# --- Register Tools (12 consolidated tools) ---
 
 # 1. Session entry point
 mcp.tool()(orient_session)
@@ -69,6 +71,12 @@ mcp.tool()(validate_insight)
 
 # 10. Configuration and status
 mcp.tool()(configure_cortex)
+
+# 11. Storage cleanup
+mcp.tool()(cleanup_storage)
+
+# 12. Delete document
+mcp.tool()(delete_document)
 
 
 # --- Entry Point ---

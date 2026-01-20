@@ -3,7 +3,7 @@ Cortex MCP Tools
 
 All MCP tool implementations organized by function.
 
-Consolidated tool set (10 tools):
+Consolidated tool set (12 tools):
 1. orient_session - Session entry point
 2. search_cortex - Search memory
 3. recall_recent_work - Timeline view of recent work
@@ -14,6 +14,8 @@ Consolidated tool set (10 tools):
 8. ingest_codebase - Code ingestion
 9. validate_insight - Validate stale insights
 10. configure_cortex - Configuration and status
+11. cleanup_storage - Clean up orphaned data
+12. delete_document - Delete a single document
 """
 
 from src.tools.admin import configure_cortex, get_skeleton
@@ -23,6 +25,7 @@ from src.tools.notes import save_memory, conclude_session, validate_insight
 from src.tools.orient import orient_session
 from src.tools.recall import recall_recent_work
 from src.tools.search import search_cortex
+from src.tools.storage import cleanup_storage, delete_document
 
 __all__ = [
     # Session
@@ -43,4 +46,7 @@ __all__ = [
     "ingest_codebase",
     # Admin
     "configure_cortex",
+    # Storage
+    "cleanup_storage",
+    "delete_document",
 ]
