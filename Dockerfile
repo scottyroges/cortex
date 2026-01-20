@@ -2,10 +2,10 @@
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /web
-COPY src/browser/web/package.json ./
+COPY src/ui/web/package.json ./
 RUN npm install
 
-COPY src/browser/web/ ./
+COPY src/ui/web/ ./
 RUN npm run build
 
 

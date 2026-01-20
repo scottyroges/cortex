@@ -41,5 +41,5 @@ Thumbs.db
 .claude/
 
 # Web frontend
-src/browser/web/node_modules/
+src/ui/web/node_modules/
 static/
