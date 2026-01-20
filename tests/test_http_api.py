@@ -335,6 +335,197 @@ class TestIngestEndpoint:
         assert found, "Ingested content should be searchable"
 
 
+class TestFocusedInitiativeEndpoint:
+    """Tests for GET /focused-initiative endpoint."""
+
+    def test_focused_initiative_no_focus(self, api_client, temp_chroma_client):
+        """Test returns null when no initiative is focused."""
+        response = api_client.get("/focused-initiative", params={"repository": "test-repo"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["initiative_id"] is None
+        assert data["initiative_name"] is None
+
+    def test_focused_initiative_with_focus(self, api_client, temp_chroma_client):
+        """Test returns initiative info when one is focused."""
+        # Mock the function where it's imported (inside the endpoint)
+        with patch("src.tools.initiatives.get_focused_initiative") as mock_get_focused:
+            mock_get_focused.return_value = {
+                "initiative_id": "initiative:test123",
+                "initiative_name": "Test Initiative",
+            }
+
+            response = api_client.get("/focused-initiative", params={"repository": "test-repo"})
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "success"
+            assert data["initiative_id"] == "initiative:test123"
+            assert data["initiative_name"] == "Test Initiative"
+
+    def test_focused_initiative_requires_repository(self, api_client):
+        """Test that repository parameter is required."""
+        response = api_client.get("/focused-initiative")
+        assert response.status_code == 422
+
+
+class TestSessionSummaryWithInitiative:
+    """Tests for /session-summary endpoint with initiative linking."""
+
+    @patch("src.tools.notes.conclude_session")
+    def test_session_summary_passes_initiative_id(self, mock_conclude, api_client):
+        """Test that initiative_id is passed to conclude_session."""
+        mock_conclude.return_value = '{"status": "success", "session_id": "session_summary:abc123"}'
+
+        response = api_client.post(
+            "/session-summary",
+            json={
+                "summary": "Test session summary",
+                "changed_files": ["/a.py"],
+                "repository": "test-repo",
+                "initiative_id": "initiative:xyz789",
+            }
+        )
+
+        assert response.status_code == 200
+        mock_conclude.assert_called_once()
+        call_kwargs = mock_conclude.call_args
+        assert call_kwargs[1]["initiative"] == "initiative:xyz789"
+
+    @patch("src.tools.notes.conclude_session")
+    def test_session_summary_falls_back_to_initiative_name(self, mock_conclude, api_client):
+        """Test that initiative (name) is used as fallback when initiative_id not provided."""
+        mock_conclude.return_value = '{"status": "success", "session_id": "session_summary:abc123"}'
+
+        response = api_client.post(
+            "/session-summary",
+            json={
+                "summary": "Test session summary",
+                "changed_files": [],
+                "repository": "test-repo",
+                "initiative": "My Initiative Name",
+            }
+        )
+
+        assert response.status_code == 200
+        mock_conclude.assert_called_once()
+        call_kwargs = mock_conclude.call_args
+        assert call_kwargs[1]["initiative"] == "My Initiative Name"
+
+    @patch("src.tools.notes.conclude_session")
+    def test_session_summary_prefers_initiative_id_over_name(self, mock_conclude, api_client):
+        """Test that initiative_id takes precedence over initiative name."""
+        mock_conclude.return_value = '{"status": "success", "session_id": "session_summary:abc123"}'
+
+        response = api_client.post(
+            "/session-summary",
+            json={
+                "summary": "Test session summary",
+                "changed_files": [],
+                "repository": "test-repo",
+                "initiative_id": "initiative:preferred",
+                "initiative": "Ignored Name",
+            }
+        )
+
+        assert response.status_code == 200
+        mock_conclude.assert_called_once()
+        call_kwargs = mock_conclude.call_args
+        assert call_kwargs[1]["initiative"] == "initiative:preferred"
+
+    @patch("src.tools.notes.conclude_session")
+    def test_session_summary_returns_initiative_info(self, mock_conclude, api_client):
+        """Test that response includes initiative info from conclude_session."""
+        mock_conclude.return_value = json.dumps({
+            "status": "success",
+            "session_id": "session_summary:abc123",
+            "initiative": {
+                "id": "initiative:xyz",
+                "name": "Test Initiative",
+            }
+        })
+
+        response = api_client.post(
+            "/session-summary",
+            json={
+                "summary": "Test session summary",
+                "changed_files": [],
+                "repository": "test-repo",
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["initiative"]["id"] == "initiative:xyz"
+        assert data["initiative"]["name"] == "Test Initiative"
+
+
+class TestProcessSyncWithInitiative:
+    """Tests for /process-sync endpoint with initiative linking."""
+
+    @patch("src.configs.yaml_config.load_yaml_config")
+    @patch("src.external.llm.get_provider")
+    @patch("src.controllers.http.api.save_session_summary")
+    def test_process_sync_passes_initiative_id(
+        self, mock_save, mock_get_provider, mock_load_config
+    ):
+        """Test that initiative_id is passed through to save_session_summary."""
+        from src.controllers.http.api import ProcessSyncRequest, process_sync
+
+        mock_load_config.return_value = {}
+        mock_provider = MagicMock()
+        mock_provider.summarize_session.return_value = "Generated summary"
+        mock_get_provider.return_value = mock_provider
+        mock_save.return_value = {"status": "success", "session_id": "test"}
+
+        request = ProcessSyncRequest(
+            session_id="test-session",
+            transcript_text="User: Hello\nAssistant: Hi there",
+            files_edited=["/a.py"],
+            repository="test-repo",
+            initiative_id="initiative:abc123",
+        )
+
+        result = process_sync(request)
+
+        assert result["status"] == "success"
+        mock_save.assert_called_once()
+        call_args = mock_save.call_args[0][0]  # First positional arg (SessionSummaryRequest)
+        assert call_args.initiative_id == "initiative:abc123"
+
+    @patch("src.configs.yaml_config.load_yaml_config")
+    @patch("src.external.llm.get_provider")
+    @patch("src.controllers.http.api.save_session_summary")
+    def test_process_sync_without_initiative(
+        self, mock_save, mock_get_provider, mock_load_config
+    ):
+        """Test process_sync works without initiative_id (falls back to focused)."""
+        from src.controllers.http.api import ProcessSyncRequest, process_sync
+
+        mock_load_config.return_value = {}
+        mock_provider = MagicMock()
+        mock_provider.summarize_session.return_value = "Generated summary"
+        mock_get_provider.return_value = mock_provider
+        mock_save.return_value = {"status": "success", "session_id": "test"}
+
+        request = ProcessSyncRequest(
+            session_id="test-session",
+            transcript_text="User: Hello\nAssistant: Hi there",
+            files_edited=[],
+            repository="test-repo",
+            # No initiative_id
+        )
+
+        result = process_sync(request)
+
+        assert result["status"] == "success"
+        mock_save.assert_called_once()
+        call_args = mock_save.call_args[0][0]
+        assert call_args.initiative_id is None
+
+
 class TestBrowseUpdateEndpoint:
     """Tests for PUT /browse/update endpoint."""
 

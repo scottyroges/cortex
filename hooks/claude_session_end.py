@@ -32,8 +32,9 @@ Exit codes:
 import json
 import os
 import sys
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -258,12 +259,20 @@ def queue_session_for_processing(
     transcript_text: str,
     files_edited: list,
     repository: str,
+    initiative_id: str | None = None,
 ) -> bool:
     """
     Queue a session for async processing by the Cortex daemon.
 
     The daemon will generate the summary and save to Cortex asynchronously,
     allowing the hook to exit immediately.
+
+    Args:
+        session_id: Session identifier
+        transcript_text: Full transcript text
+        files_edited: List of edited file paths
+        repository: Repository name
+        initiative_id: Focused initiative ID at session end (for proper linking)
 
     Returns True if queued successfully.
     """
@@ -279,14 +288,20 @@ def queue_session_for_processing(
             except Exception:
                 queue = []
 
-        # Add session to queue
-        queue.append({
+        # Add session to queue with initiative context
+        queue_entry = {
             "session_id": session_id,
             "transcript_text": transcript_text,
             "files_edited": files_edited,
             "repository": repository,
             "queued_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+
+        # Include initiative_id if available (captured at session end)
+        if initiative_id:
+            queue_entry["initiative_id"] = initiative_id
+
+        queue.append(queue_entry)
 
         # Keep only last 100 queued sessions
         queue = queue[-100:]
@@ -319,11 +334,39 @@ def notify_daemon():
         pass
 
 
+def get_focused_initiative(repository: str) -> str | None:
+    """
+    Get the focused initiative ID for a repository from the Cortex daemon.
+
+    This captures the initiative context at session end time, so that
+    async processing links to the correct initiative even if focus changes.
+
+    Args:
+        repository: Repository name
+
+    Returns:
+        Initiative ID if one is focused, None otherwise
+    """
+    try:
+        url = f"{CORTEX_API_URL}/focused-initiative?repository={urllib.parse.quote(repository)}"
+        req = urllib.request.Request(url, method="GET")
+        response = urllib.request.urlopen(req, timeout=2)
+        result = json.loads(response.read().decode("utf-8"))
+
+        if result.get("status") == "success":
+            return result.get("initiative_id")
+        return None
+    except Exception as e:
+        log(f"Failed to get focused initiative: {e}", "WARNING")
+        return None
+
+
 def process_sync(
     session_id: str,
     transcript: dict,
     repository: str,
     config: dict,
+    initiative_id: str | None = None,
 ) -> bool:
     """
     Process session synchronously by calling daemon's /process-sync endpoint.
@@ -336,6 +379,7 @@ def process_sync(
         transcript: Parsed transcript dict with 'text' and 'files_edited'
         repository: Repository name
         config: Cortex config dict
+        initiative_id: Focused initiative ID at session end
 
     Returns:
         True if successfully processed, False if should fall back to async queue
@@ -348,6 +392,10 @@ def process_sync(
         "files_edited": transcript["files_edited"],
         "repository": repository,
     }
+
+    # Include initiative_id if available
+    if initiative_id:
+        payload["initiative_id"] = initiative_id
 
     try:
         req = urllib.request.Request(
@@ -449,6 +497,13 @@ def main():
     # Detect repository
     repository = detect_repository(transcript["project_path"] or cwd)
 
+    # Capture focused initiative at session end time
+    # This ensures the session is linked to the correct initiative even if
+    # async processing happens later when a different initiative is focused
+    initiative_id = get_focused_initiative(repository)
+    if initiative_id:
+        log(f"Captured focused initiative: {initiative_id}")
+
     # Check sync/async mode
     auto_commit_async = config.get("autocapture", {}).get("auto_commit_async", True)
 
@@ -459,6 +514,7 @@ def main():
             transcript_text=transcript["text"],
             files_edited=transcript["files_edited"],
             repository=repository,
+            initiative_id=initiative_id,
         ):
             log(f"Session queued for async processing: {repository}")
             mark_session_captured(session_id)
@@ -471,7 +527,7 @@ def main():
         # Sync mode: wait for LLM summary + commit to complete
         log(f"Processing session synchronously (auto_commit_async=false)")
 
-        success = process_sync(session_id, transcript, repository, config)
+        success = process_sync(session_id, transcript, repository, config, initiative_id)
 
         if success:
             mark_session_captured(session_id)
@@ -483,6 +539,7 @@ def main():
                 transcript_text=transcript["text"],
                 files_edited=transcript["files_edited"],
                 repository=repository,
+                initiative_id=initiative_id,
             ):
                 log(f"Session queued for async processing (fallback): {repository}")
                 mark_session_captured(session_id)

@@ -132,6 +132,8 @@ class QueueProcessor:
         transcript_text = session.get("transcript_text", "")
         files_edited = session.get("files_edited", [])
         repository = session.get("repository", "global")
+        # Initiative ID captured at session end time (ensures correct linking)
+        initiative_id = session.get("initiative_id")
 
         if not transcript_text:
             logger.warning(f"Empty transcript for session {session_id}")
@@ -154,14 +156,16 @@ class QueueProcessor:
             logger.error(f"Failed to generate summary: {e}")
             return False  # Keep in queue for retry
 
-        # Save to Cortex
+        # Save to Cortex with initiative context
         try:
             result = conclude_session(
                 summary=summary,
                 changed_files=files_edited,
                 repository=repository,
+                initiative=initiative_id,  # Pass initiative from queue
             )
-            logger.info(f"Saved session summary {session_id} to Cortex: {repository}")
+            initiative_info = f" (initiative: {initiative_id})" if initiative_id else ""
+            logger.info(f"Saved session summary {session_id} to Cortex: {repository}{initiative_info}")
             return True
         except Exception as e:
             logger.error(f"Failed to save session summary to Cortex: {e}")

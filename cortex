@@ -244,7 +244,10 @@ build_docker_volumes() {
 
     # Mount data directory (ensure it exists)
     mkdir -p "$DATA_PATH"
+    mkdir -p "$DATA_PATH/db"
     DOCKER_VOLUMES+=("-v" "$DATA_PATH:$DATA_PATH")
+    # Mount the database directory to where Docker code expects it
+    DOCKER_VOLUMES+=("-v" "$DATA_PATH/db:/app/cortex_db")
 
     # Mount code paths
     if [ -n "$CODE_PATHS" ]; then

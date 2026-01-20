@@ -852,6 +852,72 @@ class TestQueueProcessor:
 
     @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
+    @patch("src.tools.notes.conclude_session")
+    def test_process_session_with_initiative(
+        self, mock_conclude_session, mock_get_provider, mock_load_config
+    ):
+        """Session processing passes initiative_id from queue to conclude_session."""
+        from src.tools.autocapture.queue_processor import QueueProcessor
+
+        # Setup mocks
+        mock_load_config.return_value = {}
+        mock_provider = MagicMock()
+        mock_provider.summarize_session.return_value = "Test summary"
+        mock_get_provider.return_value = mock_provider
+        mock_conclude_session.return_value = "{}"
+
+        processor = QueueProcessor()
+        session = {
+            "session_id": "test-1",
+            "transcript_text": "User: Hello\nAssistant: Hi",
+            "files_edited": ["/a.py"],
+            "repository": "test-repo",
+            "initiative_id": "initiative:abc123",  # Initiative captured at session end
+        }
+
+        result = processor._process_session(session)
+
+        assert result is True
+        mock_conclude_session.assert_called_once()
+        # Verify initiative was passed
+        call_kwargs = mock_conclude_session.call_args[1]
+        assert call_kwargs["initiative"] == "initiative:abc123"
+
+    @patch("src.configs.yaml_config.load_yaml_config")
+    @patch("src.external.llm.get_provider")
+    @patch("src.tools.notes.conclude_session")
+    def test_process_session_without_initiative(
+        self, mock_conclude_session, mock_get_provider, mock_load_config
+    ):
+        """Session processing works when initiative_id is not in queue (legacy sessions)."""
+        from src.tools.autocapture.queue_processor import QueueProcessor
+
+        # Setup mocks
+        mock_load_config.return_value = {}
+        mock_provider = MagicMock()
+        mock_provider.summarize_session.return_value = "Test summary"
+        mock_get_provider.return_value = mock_provider
+        mock_conclude_session.return_value = "{}"
+
+        processor = QueueProcessor()
+        session = {
+            "session_id": "test-1",
+            "transcript_text": "User: Hello\nAssistant: Hi",
+            "files_edited": ["/a.py"],
+            "repository": "test-repo",
+            # No initiative_id - legacy queue entry or no initiative focused
+        }
+
+        result = processor._process_session(session)
+
+        assert result is True
+        mock_conclude_session.assert_called_once()
+        # Verify initiative is None (will trigger fallback to focused initiative)
+        call_kwargs = mock_conclude_session.call_args[1]
+        assert call_kwargs["initiative"] is None
+
+    @patch("src.configs.yaml_config.load_yaml_config")
+    @patch("src.external.llm.get_provider")
     def test_process_session_no_provider(self, mock_get_provider, mock_load_config):
         """Session returns False when no LLM provider available."""
         from src.tools.autocapture.queue_processor import QueueProcessor
@@ -980,6 +1046,128 @@ class TestSyncAsyncConfig:
 
         assert result["status"] == "configured"
         assert "autocapture_async=False" in result["changes"]
+
+
+# =============================================================================
+# Hook Initiative Capture Tests
+# =============================================================================
+
+
+class TestHookInitiativeCapture:
+    """Tests for initiative capture in the session end hook."""
+
+    def test_queue_session_includes_initiative_id(self, temp_dir):
+        """Test that queue_session_for_processing includes initiative_id in queue entry."""
+        # Import the hook module functions
+        import sys
+        hook_path = Path(__file__).parent.parent / "hooks"
+        sys.path.insert(0, str(hook_path))
+
+        # We need to test the queue structure, so create a temporary queue file
+        queue_file = temp_dir / "capture_queue.json"
+
+        # Mock CORTEX_DATA_DIR to use our temp dir
+        with patch("hooks.claude_session_end.CORTEX_DATA_DIR", temp_dir):
+            from hooks.claude_session_end import queue_session_for_processing
+
+            result = queue_session_for_processing(
+                session_id="test-session-123",
+                transcript_text="User: Hello\nAssistant: Hi",
+                files_edited=["/a.py", "/b.py"],
+                repository="test-repo",
+                initiative_id="initiative:xyz789",
+            )
+
+            assert result is True
+
+            # Verify queue file contents
+            queue_data = json.loads(queue_file.read_text())
+            assert len(queue_data) == 1
+            entry = queue_data[0]
+            assert entry["session_id"] == "test-session-123"
+            assert entry["repository"] == "test-repo"
+            assert entry["initiative_id"] == "initiative:xyz789"
+            assert entry["files_edited"] == ["/a.py", "/b.py"]
+
+    def test_queue_session_without_initiative(self, temp_dir):
+        """Test that queue works when no initiative is provided."""
+        import sys
+        hook_path = Path(__file__).parent.parent / "hooks"
+        sys.path.insert(0, str(hook_path))
+
+        queue_file = temp_dir / "capture_queue.json"
+
+        with patch("hooks.claude_session_end.CORTEX_DATA_DIR", temp_dir):
+            from hooks.claude_session_end import queue_session_for_processing
+
+            result = queue_session_for_processing(
+                session_id="test-session-456",
+                transcript_text="User: Hello",
+                files_edited=[],
+                repository="test-repo",
+                # No initiative_id
+            )
+
+            assert result is True
+
+            queue_data = json.loads(queue_file.read_text())
+            assert len(queue_data) == 1
+            entry = queue_data[0]
+            assert "initiative_id" not in entry  # Should not be present when None
+
+    def test_get_focused_initiative_success(self):
+        """Test get_focused_initiative returns initiative from daemon."""
+        import sys
+        hook_path = Path(__file__).parent.parent / "hooks"
+        sys.path.insert(0, str(hook_path))
+
+        from hooks.claude_session_end import get_focused_initiative
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "status": "success",
+            "initiative_id": "initiative:abc123",
+            "initiative_name": "Test Initiative",
+        }).encode("utf-8")
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = get_focused_initiative("test-repo")
+
+            assert result == "initiative:abc123"
+
+    def test_get_focused_initiative_no_focus(self):
+        """Test get_focused_initiative returns None when no initiative focused."""
+        import sys
+        hook_path = Path(__file__).parent.parent / "hooks"
+        sys.path.insert(0, str(hook_path))
+
+        from hooks.claude_session_end import get_focused_initiative
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "status": "success",
+            "initiative_id": None,
+            "initiative_name": None,
+        }).encode("utf-8")
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = get_focused_initiative("test-repo")
+
+            assert result is None
+
+    def test_get_focused_initiative_daemon_unavailable(self):
+        """Test get_focused_initiative returns None when daemon is unavailable."""
+        import sys
+        import urllib.error
+        hook_path = Path(__file__).parent.parent / "hooks"
+        sys.path.insert(0, str(hook_path))
+
+        from hooks.claude_session_end import get_focused_initiative
+
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Connection refused")):
+            result = get_focused_initiative("test-repo")
+
+            assert result is None  # Should gracefully handle failure
 
 
 class TestProcessSyncEndpoint:
