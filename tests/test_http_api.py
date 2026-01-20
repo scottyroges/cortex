@@ -467,7 +467,7 @@ class TestProcessSyncWithInitiative:
 
     @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
-    @patch("src.controllers.http.api.save_session_summary")
+    @patch("src.controllers.http.api.autocapture.save_session_summary")
     def test_process_sync_passes_initiative_id(
         self, mock_save, mock_get_provider, mock_load_config
     ):
@@ -497,7 +497,7 @@ class TestProcessSyncWithInitiative:
 
     @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
-    @patch("src.controllers.http.api.save_session_summary")
+    @patch("src.controllers.http.api.autocapture.save_session_summary")
     def test_process_sync_without_initiative(
         self, mock_save, mock_get_provider, mock_load_config
     ):
