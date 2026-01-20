@@ -523,6 +523,68 @@ autocapture:
 
 ---
 
+## Scenario 23: Cleaning Up Orphaned Data
+
+**Context:** User has deleted or moved files in their codebase, leaving stale metadata in Cortex.
+
+**Problem:** Old file_metadata, insights, and dependencies reference files that no longer exist.
+
+**Flow (preview):**
+1. `cleanup_storage(action="preview", repository="MyApp", path="/path/to/myapp")` - See what would be deleted
+
+**Example Response:**
+```json
+{
+  "status": "success",
+  "action": "preview",
+  "orphaned_file_metadata": {"count": 5, "orphaned_files": ["src/old_module.py", ...]},
+  "orphaned_insights": {"count": 2, "orphaned_ids": ["insight:abc123", ...]},
+  "orphaned_dependencies": {"count": 3},
+  "total_orphaned": 10,
+  "message": "Found 10 orphaned documents. Run with action='execute' to delete."
+}
+```
+
+**Flow (execute):**
+1. `cleanup_storage(action="execute", repository="MyApp", path="/path/to/myapp")` - Delete orphaned data
+
+**When to use:**
+- After major refactoring that renamed/relocated files
+- After deleting obsolete modules
+- Periodic maintenance to reclaim storage
+
+**Tools Used:** `cleanup_storage`
+
+---
+
+## Scenario 24: Deleting a Specific Document
+
+**Context:** User wants to remove a specific note, insight, or other document that is stale or incorrect.
+
+**Problem:** A saved piece of knowledge is outdated or wrong and should be removed.
+
+**Flow:**
+1. `search_cortex("the topic")` - Find the document ID
+2. `delete_document(document_id="note:abc123")` - Delete the specific document
+
+**Example Response:**
+```json
+{
+  "status": "deleted",
+  "document_id": "note:abc123",
+  "document_type": "note"
+}
+```
+
+**When to use:**
+- Removing outdated notes or insights
+- Cleaning up incorrectly saved documents
+- Removing test/experimental entries
+
+**Tools Used:** `search_cortex`, `delete_document`
+
+---
+
 ## Tool Summary by Scenario
 
 | Scenario | Primary Tools |
@@ -548,10 +610,12 @@ autocapture:
 | Admin/debug | `configure_cortex` |
 | Auto-capture status | `configure_cortex` |
 | Configure auto-capture | `configure_cortex` |
+| Cleaning up orphaned data | `cleanup_storage` |
+| Deleting specific documents | `search_cortex`, `delete_document` |
 
 ---
 
-## Final Tool Set (10 Consolidated Tools)
+## Final Tool Set (12 Consolidated Tools)
 
 | Tool | Purpose |
 |------|---------|
@@ -565,3 +629,5 @@ autocapture:
 | `ingest_codebase` | Index codebase with AST chunking or check async status (`action="ingest"` or `"status"`) |
 | `get_skeleton` | File tree for path grounding |
 | `configure_cortex` | Unified config: runtime settings, repo tech stack, autocapture, and system status |
+| `cleanup_storage` | Remove orphaned file_metadata, insights, and dependencies |
+| `delete_document` | Delete a single document by ID |

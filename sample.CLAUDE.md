@@ -28,7 +28,7 @@ Use it in conjunction with your own file searches to get a complete picture of t
 | `cortex>> ingest <path>` | Index a codebase into memory |
 | `cortex>> skeleton` | Show repository file structure |
 
-## 10 Consolidated Tools
+## 12 Consolidated Tools
 
 | Tool | Purpose |
 |------|---------|
@@ -42,6 +42,8 @@ Use it in conjunction with your own file searches to get a complete picture of t
 | `ingest_codebase` | Index codebase (action: "ingest" or "status") |
 | `validate_insight` | Verify stale insights against current code |
 | `configure_cortex` | Configuration, repo context, and system status |
+| `cleanup_storage` | Remove orphaned data (action: "preview" or "execute") |
+| `delete_document` | Delete a document by ID |
 
 ## Initiative Management
 

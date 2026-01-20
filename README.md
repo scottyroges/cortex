@@ -172,7 +172,7 @@ This shows the daemon's git commit vs your local HEAD. If they differ, run `cort
 
 You can also check from within a Claude Code session using `orient_session` - it now includes `update_available: true` when your local code is newer than the running daemon.
 
-## MCP Tools (10 Consolidated)
+## MCP Tools (12 Consolidated)
 
 ### Session & Search
 
@@ -208,6 +208,13 @@ You can also check from within a Claude Code session using `orient_session` - it
 | Tool | Description |
 |------|-------------|
 | `configure_cortex` | Unified config: runtime settings, repo tech stack (`repository` + `tech_stack`), autocapture, and `get_status=True` for system status |
+
+### Storage Management
+
+| Tool | Description |
+|------|-------------|
+| `cleanup_storage` | Remove orphaned file_metadata, insights, and dependencies for deleted files. Use `action="preview"` to see what would be deleted, `action="execute"` to delete |
+| `delete_document` | Delete a single document by ID (e.g., `note:abc123`, `insight:def456`) |
 
 **Initiative Workflow:**
 - New session summaries and notes are automatically tagged with the focused initiative
@@ -525,14 +532,15 @@ Cortex/
 │   ├── server.py          # MCP server entry point
 │   ├── version.py         # Version checking and update detection
 │   ├── config.py          # Configuration (config.yaml)
-│   ├── tools/             # MCP tool implementations (10 consolidated tools)
+│   ├── tools/             # MCP tool implementations (12 consolidated tools)
 │   │   ├── orient.py      # orient_session (session entry point)
 │   │   ├── search.py      # search_cortex
 │   │   ├── ingest.py      # ingest_codebase (action="ingest" or "status")
 │   │   ├── notes.py       # save_memory, conclude_session, validate_insight
 │   │   ├── initiatives.py # manage_initiative (action=create/list/focus/complete/summarize)
 │   │   ├── recall.py      # recall_recent_work
-│   │   └── admin.py       # configure_cortex, get_skeleton
+│   │   ├── admin.py       # configure_cortex, get_skeleton
+│   │   └── storage.py     # cleanup_storage, delete_document
 │   ├── autocapture/       # Auto-capture system
 │   │   ├── transcript.py  # JSONL transcript parsing
 │   │   ├── significance.py # Significance detection

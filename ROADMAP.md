@@ -23,8 +23,8 @@ Core infrastructure complete. Semantic memory, auto-capture, and developer exper
 | **Data Contracts** | ✅ | Interfaces, types, schemas extracted |
 | **Cross-File Relationships** | ⬜ | Track which files are commonly edited together |
 | **Architecture Detection** | ⬜ | Identify patterns: monorepo structure, layer boundaries |
-| **Cleanup Tools** | ⬜ | Remove orphaned chunks, stale entries |
-| **Selective Purge** | ⬜ | Delete by repository, branch, type, date range |
+| **Cleanup Tools** | ✅ | Remove orphaned file_metadata, insights, dependencies |
+| **Selective Purge** | ✅ | Delete documents by ID, filter-based backend ready |
 
 ---
 
