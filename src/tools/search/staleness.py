@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.configs import get_logger
-from src.configs.config import DEFAULT_CONFIG
+from src.configs.runtime import DEFAULT_CONFIG
 from src.tools.ingest.walker import compute_file_hash
 
 logger = get_logger("tools.staleness")

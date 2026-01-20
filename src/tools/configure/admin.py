@@ -181,7 +181,7 @@ def _configure_autocapture(
 ) -> list[str]:
     """Configure autocapture settings and return list of changes."""
     try:
-        from src.configs.config import load_yaml_config, save_yaml_config, create_default_config
+        from src.configs.yaml_config import load_yaml_config, save_yaml_config, create_default_config
     except ImportError:
         return []
 
@@ -254,7 +254,8 @@ def _get_full_status() -> str:
 
     # Get autocapture status
     try:
-        from src.configs.config import load_yaml_config, get_config_path, get_data_path
+        from src.configs.yaml_config import load_yaml_config, get_config_path
+        from src.configs.paths import get_data_path
         from src.install import get_hook_status
         from src.external.llm import get_available_providers
 

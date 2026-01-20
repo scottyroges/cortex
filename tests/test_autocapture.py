@@ -820,7 +820,7 @@ class TestQueueProcessor:
             if temp_path.exists():
                 temp_path.unlink()
 
-    @patch("src.configs.config.load_yaml_config")
+    @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
     @patch("src.tools.notes.conclude_session")
     def test_process_session_success(
@@ -850,7 +850,7 @@ class TestQueueProcessor:
         mock_provider.summarize_session.assert_called_once()
         mock_conclude_session.assert_called_once()
 
-    @patch("src.configs.config.load_yaml_config")
+    @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
     def test_process_session_no_provider(self, mock_get_provider, mock_load_config):
         """Session returns False when no LLM provider available."""
@@ -946,13 +946,13 @@ class TestSyncAsyncConfig:
 
     def test_default_config_async_true(self):
         """Default config has auto_commit_async=True."""
-        from src.configs.config import DEFAULT_CONFIG_YAML
+        from src.configs.yaml_config import DEFAULT_CONFIG_YAML
 
         assert "auto_commit_async: true" in DEFAULT_CONFIG_YAML
 
     def test_default_config_sync_timeout(self):
         """Default config has sync_timeout=60."""
-        from src.configs.config import DEFAULT_CONFIG_YAML
+        from src.configs.yaml_config import DEFAULT_CONFIG_YAML
 
         assert "sync_timeout: 60" in DEFAULT_CONFIG_YAML
 
@@ -964,9 +964,9 @@ class TestSyncAsyncConfig:
         assert "autocapture" in status
         assert "config" in status["autocapture"]
 
-    @patch("src.configs.config.load_yaml_config")
-    @patch("src.configs.config.save_yaml_config")
-    @patch("src.configs.config.create_default_config")
+    @patch("src.configs.yaml_config.load_yaml_config")
+    @patch("src.configs.yaml_config.save_yaml_config")
+    @patch("src.configs.yaml_config.create_default_config")
     def test_configure_cortex_autocapture_async_setting(
         self, mock_create, mock_save, mock_load
     ):
@@ -1014,7 +1014,7 @@ class TestProcessSyncEndpoint:
 
         assert result["status"] == "skipped"
 
-    @patch("src.configs.config.load_yaml_config")
+    @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
     def test_process_sync_no_provider(self, mock_get_provider, mock_load_config):
         """process_sync returns error when no LLM provider."""
@@ -1034,7 +1034,7 @@ class TestProcessSyncEndpoint:
         assert result["status"] == "error"
         assert "No LLM provider" in result["error"]
 
-    @patch("src.configs.config.load_yaml_config")
+    @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
     def test_process_sync_success(self, mock_get_provider, mock_load_config):
         """process_sync succeeds with mocked dependencies."""
@@ -1066,7 +1066,7 @@ class TestProcessSyncEndpoint:
             mock_provider.summarize_session.assert_called_once()
             mock_save.assert_called_once()
 
-    @patch("src.configs.config.load_yaml_config")
+    @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
     def test_process_sync_summarization_error(
         self, mock_get_provider, mock_load_config

@@ -1,21 +1,22 @@
 """
 Shared Services
 
-Lazy-initialized services shared across all tools.
+Thread-safe lazy-initialized services shared across all tools and HTTP endpoints.
+Uses singleton pattern with double-checked locking for thread safety.
 """
 
 import os
-from typing import TYPE_CHECKING, Any, Optional
+from threading import RLock
+from typing import TYPE_CHECKING, Optional
 
 import chromadb
 from anthropic import Anthropic
 
-from src.configs.config import get_full_config
+from src.configs.runtime import get_full_config
 from src.external.git import is_git_repo
 from src.storage import get_chroma_client, get_or_create_collection
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
-# These imports are only used for type hints
 if TYPE_CHECKING:
     from src.tools.search.hybrid import HybridSearcher
     from src.tools.search.reranker import RerankerService
@@ -35,76 +36,148 @@ def get_repo_path() -> Optional[str]:
     return cwd if is_git_repo(cwd) else None
 
 
-# --- Lazy-initialized Services ---
+class ServiceManager:
+    """
+    Thread-safe singleton manager for all shared services.
 
-_chroma_client: Optional[chromadb.PersistentClient] = None
-_collection: Optional[chromadb.Collection] = None
-_hybrid_searcher: Optional[Any] = None  # HybridSearcher, lazy imported
-_reranker: Optional[Any] = None  # RerankerService, lazy imported
-_anthropic_client: Optional[Anthropic] = None
+    Provides lazy initialization of ChromaDB client, collection,
+    hybrid searcher, reranker, and Anthropic client - ensuring
+    each is created only once even under concurrent access.
+    """
+
+    _instance: Optional["ServiceManager"] = None
+    _lock = RLock()
+
+    def __new__(cls) -> "ServiceManager":
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self) -> None:
+        if self._initialized:
+            return
+
+        self._client: Optional[chromadb.PersistentClient] = None
+        self._collection: Optional[chromadb.Collection] = None
+        self._searcher: Optional["HybridSearcher"] = None
+        self._reranker: Optional["RerankerService"] = None
+        self._anthropic: Optional[Anthropic] = None
+        self._resource_lock = RLock()
+        self._initialized = True
+
+    @property
+    def collection(self) -> chromadb.Collection:
+        """Get or create the ChromaDB collection."""
+        if self._collection is None:
+            with self._resource_lock:
+                if self._collection is None:
+                    self._client = get_chroma_client()
+                    self._collection = get_or_create_collection(self._client)
+        return self._collection
+
+    @property
+    def searcher(self) -> "HybridSearcher":
+        """Get or create the hybrid searcher."""
+        if self._searcher is None:
+            with self._resource_lock:
+                if self._searcher is None:
+                    from src.tools.search.hybrid import HybridSearcher
+
+                    self._searcher = HybridSearcher(self.collection)
+        return self._searcher
+
+    @property
+    def reranker(self) -> "RerankerService":
+        """Get or create the reranker."""
+        if self._reranker is None:
+            with self._resource_lock:
+                if self._reranker is None:
+                    from src.tools.search.reranker import RerankerService
+
+                    self._reranker = RerankerService()
+        return self._reranker
+
+    @property
+    def anthropic(self) -> Optional[Anthropic]:
+        """Get or create the Anthropic client (if API key available)."""
+        if self._anthropic is None and os.environ.get("ANTHROPIC_API_KEY"):
+            with self._resource_lock:
+                if self._anthropic is None and os.environ.get("ANTHROPIC_API_KEY"):
+                    self._anthropic = Anthropic()
+        return self._anthropic
+
+    @property
+    def chromadb_client(self) -> chromadb.PersistentClient:
+        """Get the ChromaDB client directly."""
+        if self._client is None:
+            with self._resource_lock:
+                if self._client is None:
+                    self._client = get_chroma_client()
+        return self._client
+
+    def reset(self) -> None:
+        """Reset all services (for testing)."""
+        with self._resource_lock:
+            self._client = None
+            self._collection = None
+            self._searcher = None
+            self._reranker = None
+            self._anthropic = None
+
+    def set_collection(self, collection: chromadb.Collection) -> None:
+        """Set collection directly (for testing)."""
+        with self._resource_lock:
+            self._collection = collection
+            self._searcher = None  # Reset searcher to use new collection
+
+
+# Module-level singleton instance
+_services = ServiceManager()
 
 # Runtime configuration (mutable)
-# Use get_full_config() to merge defaults, YAML config, and environment variables
 CONFIG = get_full_config()
 
 
+# --- Public API ---
+
+
 def get_collection() -> chromadb.Collection:
-    """Lazy initialization of ChromaDB collection."""
-    global _chroma_client, _collection
-    if _collection is None:
-        _chroma_client = get_chroma_client()
-        _collection = get_or_create_collection(_chroma_client)
-    return _collection
+    """Get the ChromaDB collection."""
+    return _services.collection
 
 
 def get_searcher() -> "HybridSearcher":
-    """Lazy initialization of hybrid searcher."""
-    global _hybrid_searcher
-    if _hybrid_searcher is None:
-        from src.tools.search.hybrid import HybridSearcher
-
-        _hybrid_searcher = HybridSearcher(get_collection())
-    return _hybrid_searcher
+    """Get the hybrid searcher."""
+    return _services.searcher
 
 
 def get_reranker() -> "RerankerService":
-    """Lazy initialization of reranker."""
-    global _reranker
-    if _reranker is None:
-        from src.tools.search.reranker import RerankerService
-
-        _reranker = RerankerService()
-    return _reranker
+    """Get the reranker."""
+    return _services.reranker
 
 
 def get_anthropic() -> Optional[Anthropic]:
-    """Lazy initialization of Anthropic client."""
-    global _anthropic_client
-    if _anthropic_client is None and os.environ.get("ANTHROPIC_API_KEY"):
-        _anthropic_client = Anthropic()
-    return _anthropic_client
+    """Get the Anthropic client (if API key available)."""
+    return _services.anthropic
 
 
 def get_chromadb_client() -> chromadb.PersistentClient:
-    """Get the ChromaDB client (for testing)."""
-    global _chroma_client
-    if _chroma_client is None:
-        _chroma_client = get_chroma_client()
-    return _chroma_client
+    """Get the ChromaDB client directly."""
+    return _services.chromadb_client
 
 
 def reset_services() -> None:
-    """Reset all lazy-initialized services. Used for testing."""
-    global _chroma_client, _collection, _hybrid_searcher, _reranker, _anthropic_client
-    _chroma_client = None
-    _collection = None
-    _hybrid_searcher = None
-    _reranker = None
-    _anthropic_client = None
+    """Reset all lazy-initialized services (for testing)."""
+    _services.reset()
 
 
 def set_collection(collection: chromadb.Collection) -> None:
-    """Set the collection directly. Used for testing."""
-    global _collection, _hybrid_searcher
-    _collection = collection
-    _hybrid_searcher = None  # Reset searcher to use new collection
+    """Set the collection directly (for testing)."""
+    _services.set_collection(collection)
+
+
+# Backward compatibility alias
+reset_resources = reset_services

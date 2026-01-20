@@ -9,7 +9,7 @@ import subprocess
 from typing import Optional
 
 from src.configs import get_logger
-from src.configs.config import get_timeout
+from src.configs.constants import get_timeout
 from src.exceptions import GitCommandError
 
 logger = get_logger("git.subprocess")

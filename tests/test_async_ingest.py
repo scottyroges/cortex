@@ -274,15 +274,19 @@ class TestAsyncIngestIntegration:
             mock_result.files_to_process = [tmp_path / "src/test.py"]  # 1 file
             mock_strategy.return_value.get_files_to_process.return_value = mock_result
 
-            with patch("src.tools.ingest.ingest._run_sync_ingestion") as mock_sync:
-                mock_sync.return_value = json.dumps({"status": "success"})
+            # Mock get_collection to avoid ChromaDB connection
+            with patch("src.tools.ingest.ingest.get_collection") as mock_collection:
+                mock_collection.return_value = MagicMock()
 
-                from src.tools.ingest.ingest import ingest_code_into_cortex
+                with patch("src.tools.ingest.ingest._run_sync_ingestion") as mock_sync:
+                    mock_sync.return_value = json.dumps({"status": "success"})
 
-                # This should use sync mode (1 file < 50)
-                result = ingest_code_into_cortex(str(tmp_path))
+                    from src.tools.ingest.ingest import ingest_code_into_cortex
 
-                mock_sync.assert_called_once()
+                    # This should use sync mode (1 file < 50)
+                    result = ingest_code_into_cortex(str(tmp_path))
+
+                    mock_sync.assert_called_once()
 
     def test_sync_vs_async_decision_large_delta(self, tmp_path):
         """Test that large delta uses async mode."""
@@ -295,15 +299,19 @@ class TestAsyncIngestIntegration:
             mock_result.files_to_process = [tmp_path / f"file{i}.py" for i in range(60)]
             mock_strategy.return_value.get_files_to_process.return_value = mock_result
 
-            with patch("src.tools.ingest.ingest._queue_async_ingestion") as mock_async:
-                mock_async.return_value = json.dumps({"status": "queued", "task_id": "test"})
+            # Mock get_collection to avoid ChromaDB connection
+            with patch("src.tools.ingest.ingest.get_collection") as mock_collection:
+                mock_collection.return_value = MagicMock()
 
-                from src.tools.ingest.ingest import ingest_code_into_cortex
+                with patch("src.tools.ingest.ingest._queue_async_ingestion") as mock_async:
+                    mock_async.return_value = json.dumps({"status": "queued", "task_id": "test"})
 
-                # This should use async mode (60 files >= 50)
-                result = ingest_code_into_cortex(str(tmp_path))
+                    from src.tools.ingest.ingest import ingest_code_into_cortex
 
-                mock_async.assert_called_once()
+                    # This should use async mode (60 files >= 50)
+                    result = ingest_code_into_cortex(str(tmp_path))
+
+                    mock_async.assert_called_once()
 
     def test_force_full_always_async(self, tmp_path):
         """Test that force_full=True always uses async mode."""

@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.configs import get_logger
-from src.configs.resource_manager import get_collection, get_reranker, get_searcher
+from src.configs.services import get_collection, get_reranker, get_searcher
 from src.storage.gc import (
     cleanup_orphaned_file_metadata,
     cleanup_orphaned_insights,

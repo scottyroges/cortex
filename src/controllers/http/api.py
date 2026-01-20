@@ -15,8 +15,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from src.configs import get_logger
-from src.configs.config import get_data_path
-from src.configs.resource_manager import get_collection, get_reranker, get_searcher
+from src.configs.paths import get_data_path
+from src.configs.services import get_collection, get_reranker, get_searcher
 from src.utils.secret_scrubber import scrub_secrets
 
 logger = get_logger("http.api")
@@ -459,7 +459,7 @@ def process_sync(request: ProcessSyncRequest) -> dict[str, Any]:
     Returns:
         Result with status, summary length, and commit info
     """
-    from src.configs.config import load_yaml_config
+    from src.configs.yaml_config import load_yaml_config
     from src.external.llm import get_provider
 
     logger.info(f"Processing session synchronously: {request.session_id}")

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.configs import get_logger
-from src.configs.config import get_data_path
+from src.configs.paths import get_data_path
 
 logger = get_logger("autocapture.queue")
 
@@ -124,7 +124,7 @@ class QueueProcessor:
         Generates summary using LLM and saves to Cortex.
         Returns True if successful.
         """
-        from src.configs.config import load_yaml_config
+        from src.configs.yaml_config import load_yaml_config
         from src.external.llm import get_provider
         from src.tools.notes import conclude_session
 

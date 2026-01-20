@@ -22,7 +22,7 @@ from typing import Any
 
 import requests
 
-from src.configs.config import get_timeout
+from src.configs.constants import get_timeout
 from src.exceptions import LLMConnectionError, LLMTimeoutError
 
 # Default timeout for HTTP requests (seconds)

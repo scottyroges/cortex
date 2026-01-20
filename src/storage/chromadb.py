@@ -10,7 +10,7 @@ from typing import Any, Optional
 import chromadb
 from chromadb.config import Settings
 
-from src.configs.config import DB_PATH
+from src.configs.paths import DB_PATH
 
 
 def get_chroma_client(persist_dir: Optional[str] = None) -> chromadb.PersistentClient:

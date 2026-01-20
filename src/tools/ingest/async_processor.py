@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.configs import get_logger
-from src.configs.config import get_data_path
+from src.configs.paths import get_data_path
 
 logger = get_logger("ingest.async")
 

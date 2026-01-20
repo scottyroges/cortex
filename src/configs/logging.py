@@ -3,8 +3,7 @@ Cortex Logging Configuration
 
 Configures logging based on environment variables:
 - CORTEX_DEBUG: Enable debug logging (default: false)
-- CORTEX_LOG_FILE: Log file path (default: $CORTEX_DATA_PATH/daemon.log)
-- CORTEX_DATA_PATH: Data directory (default: ~/.cortex)
+- CORTEX_LOG_FILE: Log file path (default: ~/.cortex/daemon.log)
 """
 
 import logging
@@ -13,16 +12,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# Default data directory
-DEFAULT_DATA_PATH = Path.home() / ".cortex"
-
-
-def get_data_path() -> Path:
-    """Get the Cortex data directory path."""
-    data_path = os.environ.get("CORTEX_DATA_PATH")
-    if data_path:
-        return Path(data_path).expanduser()
-    return DEFAULT_DATA_PATH
+from src.configs.paths import get_data_path
 
 
 def setup_logging(

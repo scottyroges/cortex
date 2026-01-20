@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from src.configs import get_logger
-from src.configs.config import DB_PATH
+from src.configs.paths import DB_PATH
 from src.storage.migrations.backup import backup_database, restore_database
 
 logger = get_logger("migrations")

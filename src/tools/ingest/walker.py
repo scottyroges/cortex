@@ -10,7 +10,8 @@ import os
 from pathlib import Path
 from typing import Generator, Optional
 
-from src.configs.config import BINARY_EXTENSIONS, MAX_FILE_SIZE, load_ignore_patterns
+from src.configs.constants import BINARY_EXTENSIONS, MAX_FILE_SIZE
+from src.configs.ignore_patterns import load_ignore_patterns
 
 
 def walk_codebase(

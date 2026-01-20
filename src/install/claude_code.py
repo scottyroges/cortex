@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.configs import get_logger
-from src.configs.config import get_timeout
+from src.configs.constants import get_timeout
 
 logger = get_logger("install.claude_code")
 

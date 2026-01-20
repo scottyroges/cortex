@@ -4,7 +4,7 @@ MCP Protocol Endpoints
 HTTP endpoints for MCP tool calls (daemon mode).
 Uses Pydantic models as the single source of truth for tool schemas.
 
-Consolidated tool set (10 tools):
+Consolidated tool set (12 tools):
 1. orient_session - Session entry point
 2. search_cortex - Search memory
 3. recall_recent_work - Timeline view of recent work
@@ -15,6 +15,8 @@ Consolidated tool set (10 tools):
 8. ingest_codebase - Code ingestion
 9. validate_insight - Validate stale insights
 10. configure_cortex - Configuration and status
+11. cleanup_storage - Clean up orphaned data
+12. delete_document - Delete a single document
 """
 
 from typing import Any, Callable, Literal, Optional
@@ -235,6 +237,22 @@ class ConfigureCortexInput(BaseModel):
     )
 
 
+# 11. cleanup_storage
+class CleanupStorageInput(BaseModel):
+    action: Literal["preview", "execute"] = Field(
+        "preview", description="Action: 'preview' shows what would be deleted, 'execute' performs deletion"
+    )
+    repository: str = Field(..., description="Repository to clean up")
+    path: str = Field(..., description="Absolute path to repository root (for file existence checks)")
+
+
+# 12. delete_document
+class DeleteDocumentInput(BaseModel):
+    document_id: str = Field(
+        ..., description="The document ID to delete (e.g., 'note:abc123', 'insight:def456')"
+    )
+
+
 # --- Tool Registry ---
 
 
@@ -269,11 +287,13 @@ def _build_tool_registry() -> dict[str, ToolDef]:
     """
     Build the tool registry with lazy imports to avoid circular dependencies.
 
-    Returns a dict mapping tool names to their ToolDef (10 consolidated tools).
+    Returns a dict mapping tool names to their ToolDef (12 consolidated tools).
     """
     from src.tools import (
+        cleanup_storage,
         configure_cortex,
         conclude_session,
+        delete_document,
         get_skeleton,
         ingest_codebase,
         manage_initiative,
@@ -354,6 +374,20 @@ def _build_tool_registry() -> dict[str, ToolDef]:
             fn=configure_cortex,
             input_model=ConfigureCortexInput,
             description="Configure Cortex settings, set repository tech stack, configure autocapture, or get system status (get_status=True).",
+        ),
+        # 11. Cleanup orphaned storage
+        ToolDef(
+            name="cleanup_storage",
+            fn=cleanup_storage,
+            input_model=CleanupStorageInput,
+            description="Clean up orphaned data from Cortex memory. Removes file_metadata, insights, and dependencies for files that no longer exist. Use action='preview' to see what would be deleted, 'execute' to delete.",
+        ),
+        # 12. Delete single document
+        ToolDef(
+            name="delete_document",
+            fn=delete_document,
+            input_model=DeleteDocumentInput,
+            description="Delete a single document from Cortex memory by ID. Use when a note, insight, or other document is stale or no longer applies.",
         ),
     ]
 

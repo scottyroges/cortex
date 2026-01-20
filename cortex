@@ -19,7 +19,6 @@
 #
 # Environment variables (override config.yaml):
 #   CORTEX_CODE_PATHS    - Comma-separated list of code directories to mount
-#   CORTEX_DATA_PATH     - Where to store Cortex data (default: ~/.cortex)
 #   CORTEX_DEBUG         - Enable debug logging (true/false)
 #   CORTEX_DAEMON_PORT   - Daemon port (default: 8000)
 #   ANTHROPIC_API_KEY    - Required for LLM provider="anthropic"
@@ -264,8 +263,6 @@ build_docker_volumes() {
 
 build_docker_env() {
     DOCKER_ENVS=()
-    DOCKER_ENVS+=("-e" "CORTEX_DATA_PATH=$DATA_PATH")
-    DOCKER_ENVS+=("-e" "CORTEX_DB_PATH=$DATA_PATH/db")
     [ -n "$CORTEX_DEBUG" ] && DOCKER_ENVS+=("-e" "CORTEX_DEBUG=$CORTEX_DEBUG")
     [ -n "$ANTHROPIC_API_KEY" ] && DOCKER_ENVS+=("-e" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
     [ -n "$OPENROUTER_API_KEY" ] && DOCKER_ENVS+=("-e" "OPENROUTER_API_KEY=$OPENROUTER_API_KEY")
@@ -652,7 +649,7 @@ edit_config() {
         python3 -c "
 import sys
 sys.path.insert(0, '$CORTEX_SRC_DIR')
-from src.configs.config import create_default_config
+from src.configs.yaml_config import create_default_config
 create_default_config()
 "
     fi

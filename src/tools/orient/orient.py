@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.configs import get_logger
-from src.configs.config import get_llm_provider, load_yaml_config
+from src.configs.runtime import get_llm_provider
+from src.configs.yaml_config import load_yaml_config
 from src.external.git import (
     count_tracked_files,
     get_commits_since,

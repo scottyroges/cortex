@@ -18,36 +18,36 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def api_client(temp_chroma_client):
     """Create a test client for the HTTP API."""
-    from src.configs.resource_manager import reset_resources
+    from src.configs.services import reset_services
 
     # Reset the ResourceManager singleton before patching
-    reset_resources()
+    reset_services()
 
     # Patch the ChromaDB client in the resources module
-    with patch("src.configs.resource_manager.get_chroma_client", return_value=temp_chroma_client):
+    with patch("src.configs.services.get_chroma_client", return_value=temp_chroma_client):
         from src.controllers.http import app
         client = TestClient(app)
         yield client
 
     # Reset after test
-    reset_resources()
+    reset_services()
 
 
 @pytest.fixture
 def browse_client(temp_chroma_client):
     """Create a test client for the browse API with patched ChromaDB."""
-    from src.configs.resource_manager import reset_resources
+    from src.configs.services import reset_services
 
     # Reset the ResourceManager singleton before patching
-    reset_resources()
+    reset_services()
 
-    with patch("src.configs.resource_manager.get_chroma_client", return_value=temp_chroma_client):
+    with patch("src.configs.services.get_chroma_client", return_value=temp_chroma_client):
         from src.controllers.http import app
         client = TestClient(app)
         yield client
 
     # Reset after test
-    reset_resources()
+    reset_services()
 
 
 class TestSearchEndpoint:

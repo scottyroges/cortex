@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.configs.config import DEFAULT_IGNORE_PATTERNS
+from src.configs.ignore_patterns import DEFAULT_IGNORE_PATTERNS
 from src.external.git import get_git_changed_files, get_head_commit, get_untracked_files, is_git_repo
 from src.tools.ingest import (
     compute_file_hash,
@@ -269,7 +269,7 @@ class TestSkeleton:
 
         (temp_dir / "README.md").write_text("# Project")
 
-        from src.configs.config import DEFAULT_IGNORE_PATTERNS
+        from src.configs.ignore_patterns import DEFAULT_IGNORE_PATTERNS
 
         tree = _generate_tree_fallback(temp_dir, max_depth=10, ignore=DEFAULT_IGNORE_PATTERNS)
 
@@ -291,7 +291,7 @@ class TestSkeleton:
         nm_dir.mkdir()
         (nm_dir / "package.js").write_text("module.exports = {}")
 
-        from src.configs.config import DEFAULT_IGNORE_PATTERNS
+        from src.configs.ignore_patterns import DEFAULT_IGNORE_PATTERNS
 
         tree = _generate_tree_fallback(temp_dir, max_depth=10, ignore=DEFAULT_IGNORE_PATTERNS)
 
@@ -308,7 +308,7 @@ class TestSkeleton:
             current.mkdir()
             (current / f"file{i}.py").write_text(f"# level {i}")
 
-        from src.configs.config import DEFAULT_IGNORE_PATTERNS
+        from src.configs.ignore_patterns import DEFAULT_IGNORE_PATTERNS
 
         tree = _generate_tree_fallback(temp_dir, max_depth=2, ignore=DEFAULT_IGNORE_PATTERNS)
 
