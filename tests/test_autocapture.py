@@ -822,7 +822,7 @@ class TestQueueProcessor:
 
     @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_process_session_success(
         self, mock_conclude_session, mock_get_provider, mock_load_config
     ):
@@ -852,7 +852,7 @@ class TestQueueProcessor:
 
     @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_process_session_with_initiative(
         self, mock_conclude_session, mock_get_provider, mock_load_config
     ):
@@ -885,7 +885,7 @@ class TestQueueProcessor:
 
     @patch("src.configs.yaml_config.load_yaml_config")
     @patch("src.external.llm.get_provider")
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_process_session_without_initiative(
         self, mock_conclude_session, mock_get_provider, mock_load_config
     ):

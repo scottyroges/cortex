@@ -1,5 +1,5 @@
 """
-Notes Tools
+Memory Tools
 
 MCP tools for saving notes, insights, and session summaries.
 

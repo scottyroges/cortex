@@ -203,7 +203,7 @@ def test_auth_token():
     def test_full_session_with_notes_and_session_summary(self, project_with_code, temp_chroma_client):
         """Test complete session: orient -> ingest -> search -> save note -> session summary."""
         from src.tools.ingest import ingest_code_into_cortex
-        from src.tools.notes import session_summary_to_cortex, save_note_to_cortex
+        from src.tools.memory import session_summary_to_cortex, save_note_to_cortex
         from src.tools.orient import orient_session
         from src.tools.search.search import search_cortex
 
@@ -273,7 +273,7 @@ class TestInitiativeLifecycle:
             focus_initiative,
             list_initiatives,
         )
-        from src.tools.notes import session_summary_to_cortex, save_note_to_cortex
+        from src.tools.memory import session_summary_to_cortex, save_note_to_cortex
         from src.tools.initiatives.initiatives import summarize_initiative
         from src.tools.search.search import search_cortex
 
@@ -365,7 +365,7 @@ class TestInitiativeLifecycle:
             focus_initiative,
             list_initiatives,
         )
-        from src.tools.notes import save_note_to_cortex
+        from src.tools.memory import save_note_to_cortex
 
         reset_services()
         collection = get_or_create_collection(temp_chroma_client, "e2e_multi_init")
@@ -423,7 +423,7 @@ class TestStalenessDetection:
         """Test: save insight -> modify linked file -> detect staleness."""
         import subprocess
 
-        from src.tools.notes import insight_to_cortex
+        from src.tools.memory import insight_to_cortex
         from src.tools.search.search import search_cortex
 
         # Initialize git
@@ -496,7 +496,7 @@ class TestRecallWorkflow:
     def test_recall_recent_work(self, temp_chroma_client):
         """Test recalling recent work across sessions."""
         from src.tools.initiatives.initiatives import create_initiative
-        from src.tools.notes import session_summary_to_cortex, save_note_to_cortex
+        from src.tools.memory import session_summary_to_cortex, save_note_to_cortex
         from src.tools.orient.recall import recall_recent_work
 
         reset_services()

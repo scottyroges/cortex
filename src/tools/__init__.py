@@ -18,14 +18,15 @@ Consolidated tool set (12 tools):
 12. delete_document - Delete a single document
 """
 
-from src.tools.configure.admin import configure_cortex, get_skeleton
+from src.tools.configure.admin import configure_cortex
 from src.tools.ingest.ingest import ingest_codebase
+from src.tools.ingest.skeleton import get_skeleton
 from src.tools.initiatives.initiatives import manage_initiative
-from src.tools.notes.notes import save_memory, conclude_session, validate_insight
+from src.tools.maintenance.maintenance import cleanup_storage, delete_document
+from src.tools.memory.memory import save_memory, conclude_session, validate_insight
 from src.tools.orient.orient import orient_session
 from src.tools.orient.recall import recall_recent_work
 from src.tools.search.search import search_cortex
-from src.tools.storage_tools.storage_tools import cleanup_storage, delete_document
 
 __all__ = [
     # Session
@@ -46,7 +47,7 @@ __all__ = [
     "ingest_codebase",
     # Admin
     "configure_cortex",
-    # Storage
+    # Maintenance
     "cleanup_storage",
     "delete_document",
 ]

@@ -1,10 +1,11 @@
 """
 Project Skeleton Generation
 
-Generate and store tree structure for file-path grounding.
+Generate, store, and retrieve tree structure for file-path grounding.
 """
 
 import fnmatch
+import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,8 @@ import chromadb
 
 from src.configs import get_logger
 from src.configs.ignore_patterns import load_ignore_patterns
+from src.configs.services import get_collection, get_repo_path
+from src.external.git import get_current_branch
 
 logger = get_logger("ingest.skeleton")
 
@@ -222,3 +225,72 @@ def store_skeleton(
 
     logger.debug(f"Skeleton stored: {doc_id} ({stats['total_files']} files, {stats['total_dirs']} dirs)")
     return doc_id
+
+
+def get_skeleton(
+    repository: Optional[str] = None,
+) -> str:
+    """
+    Get the file tree structure for a repository.
+
+    Returns the stored skeleton (tree output) for file-path grounding.
+    The skeleton is auto-generated during ingest_code_into_cortex.
+
+    Args:
+        repository: Repository name (required)
+
+    Returns:
+        JSON with tree structure and metadata
+    """
+    if not repository:
+        return json.dumps({
+            "error": "Repository name is required",
+            "hint": "Provide the repository name used during ingestion",
+        })
+
+    logger.info(f"Getting skeleton for repository: {repository}")
+
+    try:
+        collection = get_collection()
+        repo_path = get_repo_path()
+        branch = get_current_branch(repo_path) if repo_path else "unknown"
+
+        # Try current branch first, then fall back to any branch
+        doc_id = f"{repository}:skeleton:{branch}"
+        result = collection.get(ids=[doc_id], include=["documents", "metadatas"])
+
+        if not result["documents"]:
+            # Try to find skeleton for any branch
+            all_results = collection.get(
+                where={"$and": [{"type": "skeleton"}, {"repository": repository}]},
+                include=["documents", "metadatas"],
+            )
+            if all_results["documents"]:
+                result = {
+                    "documents": [all_results["documents"][0]],
+                    "metadatas": [all_results["metadatas"][0]],
+                }
+
+        if not result["documents"]:
+            return json.dumps({
+                "error": f"No skeleton found for repository '{repository}'",
+                "hint": "Run ingest_code_into_cortex first to generate the skeleton",
+            })
+
+        metadata = result["metadatas"][0]
+        tree = result["documents"][0]
+
+        logger.info(f"Skeleton found: {metadata.get('total_files', 0)} files, {metadata.get('total_dirs', 0)} dirs")
+
+        return json.dumps({
+            "repository": repository,
+            "branch": metadata.get("branch", "unknown"),
+            "generated_at": metadata.get("generated_at", "unknown"),
+            "total_files": metadata.get("total_files", 0),
+            "total_dirs": metadata.get("total_dirs", 0),
+            "tree": tree,
+        }, indent=2)
+
+    except Exception as e:
+        logger.error(f"Get skeleton error: {e}")
+        return json.dumps({"error": str(e)})

@@ -1,10 +1,10 @@
 """
-Notes Tools
+Memory Tools
 
 MCP tools for saving notes, insights, and session summaries.
 """
 
-from src.tools.notes.notes import (
+from src.tools.memory.memory import (
     conclude_session,
     insight_to_cortex,
     save_memory,

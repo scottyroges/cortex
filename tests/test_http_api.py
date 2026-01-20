@@ -374,7 +374,7 @@ class TestFocusedInitiativeEndpoint:
 class TestSessionSummaryWithInitiative:
     """Tests for /session-summary endpoint with initiative linking."""
 
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_session_summary_passes_initiative_id(self, mock_conclude, api_client):
         """Test that initiative_id is passed to conclude_session."""
         mock_conclude.return_value = '{"status": "success", "session_id": "session_summary:abc123"}'
@@ -394,7 +394,7 @@ class TestSessionSummaryWithInitiative:
         call_kwargs = mock_conclude.call_args
         assert call_kwargs[1]["initiative"] == "initiative:xyz789"
 
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_session_summary_falls_back_to_initiative_name(self, mock_conclude, api_client):
         """Test that initiative (name) is used as fallback when initiative_id not provided."""
         mock_conclude.return_value = '{"status": "success", "session_id": "session_summary:abc123"}'
@@ -414,7 +414,7 @@ class TestSessionSummaryWithInitiative:
         call_kwargs = mock_conclude.call_args
         assert call_kwargs[1]["initiative"] == "My Initiative Name"
 
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_session_summary_prefers_initiative_id_over_name(self, mock_conclude, api_client):
         """Test that initiative_id takes precedence over initiative name."""
         mock_conclude.return_value = '{"status": "success", "session_id": "session_summary:abc123"}'
@@ -435,7 +435,7 @@ class TestSessionSummaryWithInitiative:
         call_kwargs = mock_conclude.call_args
         assert call_kwargs[1]["initiative"] == "initiative:preferred"
 
-    @patch("src.tools.notes.conclude_session")
+    @patch("src.tools.memory.conclude_session")
     def test_session_summary_returns_initiative_info(self, mock_conclude, api_client):
         """Test that response includes initiative info from conclude_session."""
         mock_conclude.return_value = json.dumps({

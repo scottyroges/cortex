@@ -299,7 +299,7 @@ class TestInitiativeTagging:
     def test_session_summary_tagged_with_focused_initiative(self, temp_chroma_client):
         """Test that session summaries are tagged with focused initiative."""
         from src.tools.initiatives.initiatives import create_initiative
-        from src.tools.notes import session_summary_to_cortex
+        from src.tools.memory import session_summary_to_cortex
 
         reset_services()
         collection = get_or_create_collection(temp_chroma_client, "test_session_tag")
@@ -329,7 +329,7 @@ class TestInitiativeTagging:
     def test_note_tagged_with_focused_initiative(self, temp_chroma_client):
         """Test that notes are tagged with focused initiative."""
         from src.tools.initiatives.initiatives import create_initiative
-        from src.tools.notes import save_note_to_cortex
+        from src.tools.memory import save_note_to_cortex
 
         reset_services()
         collection = get_or_create_collection(temp_chroma_client, "test_note_tag")
@@ -357,7 +357,7 @@ class TestInitiativeTagging:
     def test_session_summary_completion_signal_detected(self, temp_chroma_client):
         """Test that completion signals are detected in session summaries."""
         from src.tools.initiatives.initiatives import create_initiative
-        from src.tools.notes import session_summary_to_cortex
+        from src.tools.memory import session_summary_to_cortex
 
         reset_services()
         collection = get_or_create_collection(temp_chroma_client, "test_session_signal")
@@ -493,7 +493,7 @@ class TestSearchWithInitiatives:
     def test_search_filters_by_initiative(self, temp_chroma_client):
         """Test that search can filter by initiative."""
         from src.tools.initiatives.initiatives import create_initiative
-        from src.tools.notes import save_note_to_cortex
+        from src.tools.memory import save_note_to_cortex
         from src.tools.search.search import search_cortex
 
         reset_services()

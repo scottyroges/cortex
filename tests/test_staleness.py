@@ -275,17 +275,17 @@ class TestValidateInsight:
         mock_searcher = MagicMock()
         mock_searcher.build_index = MagicMock()
 
-        with patch("src.tools.notes.notes.get_collection", return_value=collection), \
-             patch("src.tools.notes.notes.get_repo_path", return_value=None), \
-             patch("src.tools.notes.notes.get_searcher", return_value=mock_searcher), \
-             patch("src.tools.notes.notes.get_current_branch", return_value="main"), \
-             patch("src.tools.notes.notes.get_head_commit", return_value="abc123"), \
+        with patch("src.tools.memory.memory.get_collection", return_value=collection), \
+             patch("src.tools.memory.memory.get_repo_path", return_value=None), \
+             patch("src.tools.memory.memory.get_searcher", return_value=mock_searcher), \
+             patch("src.tools.memory.memory.get_current_branch", return_value="main"), \
+             patch("src.tools.memory.memory.get_head_commit", return_value="abc123"), \
              patch("src.tools.initiatives.initiatives.get_collection", return_value=collection):
             yield collection
 
     def test_validate_insight_still_valid(self, mock_services):
         """Test validating insight as still valid updates verified_at."""
-        from src.tools.notes import insight_to_cortex, validate_insight
+        from src.tools.memory import insight_to_cortex, validate_insight
 
         collection = mock_services
 
@@ -311,7 +311,7 @@ class TestValidateInsight:
 
     def test_validate_insight_no_longer_valid_deprecate(self, mock_services):
         """Test deprecating an invalid insight."""
-        from src.tools.notes import insight_to_cortex, validate_insight
+        from src.tools.memory import insight_to_cortex, validate_insight
 
         collection = mock_services
 
@@ -341,7 +341,7 @@ class TestValidateInsight:
 
     def test_validate_insight_with_replacement(self, mock_services):
         """Test deprecating insight and creating replacement."""
-        from src.tools.notes import insight_to_cortex, validate_insight
+        from src.tools.memory import insight_to_cortex, validate_insight
 
         collection = mock_services
 
@@ -373,7 +373,7 @@ class TestValidateInsight:
 
     def test_validate_nonexistent_insight(self, mock_services):
         """Test validating insight that doesn't exist."""
-        from src.tools.notes import validate_insight
+        from src.tools.memory import validate_insight
 
         result = json.loads(validate_insight(
             insight_id="insight:nonexistent",
@@ -385,7 +385,7 @@ class TestValidateInsight:
 
     def test_validate_wrong_type(self, mock_services):
         """Test validating a document that isn't an insight."""
-        from src.tools.notes import save_note_to_cortex, validate_insight
+        from src.tools.memory import save_note_to_cortex, validate_insight
 
         # Create a note (not an insight)
         note_result = json.loads(save_note_to_cortex(

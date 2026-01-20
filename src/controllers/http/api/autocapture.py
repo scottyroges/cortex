@@ -96,7 +96,7 @@ def save_session_summary(request: SessionSummaryRequest) -> dict[str, Any]:
         initiative_id: Initiative ID to tag (preferred)
         initiative: Initiative name to tag (legacy, deprecated)
     """
-    from src.tools.notes import conclude_session
+    from src.tools.memory import conclude_session
 
     logger.info(f"Save session summary: repository={request.repository}, files={len(request.changed_files)}")
 

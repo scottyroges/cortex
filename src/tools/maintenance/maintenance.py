@@ -1,5 +1,5 @@
 """
-Storage Tools
+Maintenance Tools
 
 MCP tools for storage management - cleanup orphaned data and delete documents.
 """
