@@ -63,7 +63,7 @@ def main():
 
     elif mode == "bridge":
         # Run stdio-to-HTTP bridge
-        from src.controllers.mcp import main as bridge_main
+        from src.controllers.bridge import main as bridge_main
         bridge_main()
 
     else:
