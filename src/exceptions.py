@@ -79,7 +79,7 @@ class IngestError(CortexError):
     pass
 
 
-class FileNotFoundError(IngestError):
+class IngestFileNotFoundError(IngestError):
     """File to ingest was not found."""
 
     pass
@@ -108,7 +108,7 @@ class SearchError(CortexError):
     pass
 
 
-class IndexError(SearchError):
+class SearchIndexError(SearchError):
     """Error building or querying search index."""
 
     pass

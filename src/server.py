@@ -92,7 +92,7 @@ def start_http_server():
 
 def start_queue_processor():
     """Start the auto-capture queue processor in a background thread."""
-    from src.autocapture import start_processor
+    from src.tools.autocapture import start_processor
     start_processor()
     logger.info("Queue processor started")
 
