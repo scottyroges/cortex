@@ -5,9 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'src/__init__.py'  # Only trigger when version file changes
-      - 'Dockerfile'       # Or when Dockerfile changes
-  workflow_dispatch:       # Allow manual trigger
+      - 'src/__init__.py'                         # Version file changes
+      - 'Dockerfile'                              # Dockerfile changes
+      - '.github/workflows/docker-publish.yml'    # Workflow changes (for initial setup)
+  workflow_dispatch:                              # Allow manual trigger
 
 env:
   REGISTRY: ghcr.io
