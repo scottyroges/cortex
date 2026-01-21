@@ -1070,7 +1070,17 @@ else:
         echo "  Run 'cortex update' to sync"
     fi
 
-    # Check 12: Auto-capture hooks
+    # Check 12: Available updates (GHCR)
+    echo -n "Updates available: "
+    local version_check
+    version_check=$(curl -sf "http://localhost:${CORTEX_PORT}/version/check" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        echo "$version_check" | python3 "$CORTEX_SRC_DIR/scripts/cli_helpers.py" format-version-check 2>/dev/null || echo "UNKNOWN"
+    else
+        echo "UNKNOWN (daemon not responding)"
+    fi
+
+    # Check 13: Auto-capture hooks
     echo -n "Auto-capture hooks: "
     python3 -c "
 import sys
@@ -1089,7 +1099,7 @@ except Exception as e:
     print(f'ERROR ({e})')
 " 2>/dev/null || echo "UNKNOWN"
 
-    # Check 13: LLM Provider
+    # Check 14: LLM Provider
     echo ""
     echo "LLM Provider"
     echo "------------"

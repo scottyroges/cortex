@@ -222,3 +222,16 @@ def info() -> dict[str, str]:
         "startup_time": get_startup_time(),
         "version": __version__,
     }
+
+
+@router.get("/version/check")
+def version_check() -> dict:
+    """
+    Check for available updates.
+
+    Queries GHCR for the latest available Docker image version
+    and compares against the current running version.
+    """
+    from src.tools.orient.version import check_for_updates
+
+    return check_for_updates()

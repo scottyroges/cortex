@@ -134,6 +134,22 @@ def format_search(data: dict) -> None:
         print()
 
 
+def format_version_check(data: dict) -> None:
+    """Format version check response for CLI display."""
+    current = data.get("current_version", "unknown")
+    latest = data.get("latest_version", "unknown")
+    method = data.get("check_method", "none")
+    update_available = data.get("update_available", False)
+
+    if update_available:
+        print(f"YES - {latest} available (current: {current})")
+        print('  Run "cortex update" to update')
+    elif method == "none":
+        print("UNKNOWN (check failed)")
+    else:
+        print(f"NO (v{current} is latest)")
+
+
 def url_encode(query: str) -> str:
     """URL-encode a query string."""
     return urllib.parse.quote(query)
@@ -142,7 +158,7 @@ def url_encode(query: str) -> str:
 def main() -> int:
     if len(sys.argv) < 2:
         print("Usage: cli_helpers.py <command> [args]", file=sys.stderr)
-        print("Commands: format-status, format-initiatives, format-backups, format-search, url-encode", file=sys.stderr)
+        print("Commands: format-status, format-initiatives, format-backups, format-search, format-version-check, url-encode", file=sys.stderr)
         return 1
 
     command = sys.argv[1]
@@ -169,6 +185,8 @@ def main() -> int:
         format_backups(data)
     elif command == "format-search":
         format_search(data)
+    elif command == "format-version-check":
+        format_version_check(data)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         return 1

@@ -5,6 +5,7 @@ Handles version checking, comparison, and update detection.
 """
 
 import os
+import re
 import time
 from typing import Optional
 
@@ -18,8 +19,8 @@ logger = get_logger("version")
 _version_cache: dict = {}
 _CACHE_TTL_SECONDS = 3600
 
-# GitHub repository for release checking (set to None to disable)
-GITHUB_REPO: Optional[str] = None  # e.g., "anthropics/cortex"
+# GHCR image for update checking
+GHCR_IMAGE = "ghcr.io/scottyroges/cortex"
 
 
 def get_current_version() -> dict:
@@ -41,7 +42,7 @@ def check_for_updates(local_head: Optional[str] = None) -> dict:
     Check if updates are available.
 
     Strategy:
-    1. Try GitHub releases API (if GITHUB_REPO is configured)
+    1. Check GHCR for latest Docker image version
     2. Fall back to comparing daemon commit with local git HEAD
 
     Args:
@@ -68,14 +69,13 @@ def check_for_updates(local_head: Optional[str] = None) -> dict:
         "message": None,
     }
 
-    # Try GitHub API first (if configured)
-    if GITHUB_REPO:
-        github_result = _check_github_releases()
-        if github_result:
-            result.update(github_result)
-            result["check_method"] = "github_releases"
-            _version_cache[cache_key] = (time.time(), result)
-            return result
+    # Try GHCR check first
+    ghcr_result = _check_ghcr_latest()
+    if ghcr_result:
+        result.update(ghcr_result)
+        result["check_method"] = "ghcr"
+        _version_cache[cache_key] = (time.time(), result)
+        return result
 
     # Fall back to local HEAD comparison
     if local_head:
@@ -95,44 +95,92 @@ def check_for_updates(local_head: Optional[str] = None) -> dict:
     return result
 
 
-def _check_github_releases() -> Optional[dict]:
+def _check_ghcr_latest() -> Optional[dict]:
     """
-    Check GitHub releases API for newer versions.
+    Check GHCR for the latest available Docker image version.
+
+    Uses GitHub's container registry API to list package versions.
 
     Returns:
         Dict with update info, or None if check fails
     """
-    if not GITHUB_REPO:
-        return None
-
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    # GitHub packages API endpoint for container versions
+    # Format: /users/{owner}/packages/container/{package}/versions
+    url = "https://api.github.com/users/scottyroges/packages/container/cortex/versions"
 
     try:
         data = http_json_get(
             url,
-            headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "Cortex"},
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "Cortex",
+            },
             timeout=5,
         )
-        latest_tag = data.get("tag_name", "")
-        current = get_current_version()
 
-        # Simple version comparison (assumes semver tags like "v1.0.0")
-        latest_version = latest_tag.lstrip("v")
+        if not data or not isinstance(data, list):
+            return None
+
+        # Find the latest semver tag (exclude 'latest', 'sha-*', etc.)
+        semver_pattern = re.compile(r"^\d+\.\d+\.\d+$")
+        latest_version = None
+
+        for version in data:
+            tags = version.get("metadata", {}).get("container", {}).get("tags", [])
+            for tag in tags:
+                if semver_pattern.match(tag):
+                    if latest_version is None or _compare_versions(tag, latest_version) > 0:
+                        latest_version = tag
+
+        if not latest_version:
+            return None
+
+        current = get_current_version()
         current_version = current["version"]
 
-        if latest_version and latest_version != current_version:
+        if _compare_versions(latest_version, current_version) > 0:
             return {
                 "update_available": True,
                 "latest_version": latest_version,
                 "message": f"New version available: {latest_version} (current: {current_version}). Run 'cortex update' to update.",
             }
+
         return {
             "update_available": False,
-            "latest_version": latest_version or current_version,
+            "latest_version": latest_version,
         }
+
     except Exception as e:
-        logger.debug(f"GitHub releases check failed: {e}")
+        logger.debug(f"GHCR version check failed: {e}")
         return None
+
+
+def _compare_versions(v1: str, v2: str) -> int:
+    """
+    Compare two semver version strings.
+
+    Returns:
+        1 if v1 > v2, -1 if v1 < v2, 0 if equal
+    """
+    try:
+        parts1 = [int(x) for x in v1.split(".")]
+        parts2 = [int(x) for x in v2.split(".")]
+
+        for p1, p2 in zip(parts1, parts2):
+            if p1 > p2:
+                return 1
+            if p1 < p2:
+                return -1
+
+        # Handle different lengths (e.g., 1.0 vs 1.0.0)
+        if len(parts1) > len(parts2):
+            return 1
+        if len(parts1) < len(parts2):
+            return -1
+
+        return 0
+    except (ValueError, AttributeError):
+        return 0
 
 
 def clear_version_cache() -> None:
