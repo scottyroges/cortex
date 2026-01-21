@@ -5,6 +5,7 @@ MCP tools for managing multi-session initiatives.
 """
 
 from src.tools.initiatives.focus import (
+    get_any_focused_repository,
     get_focus,
     get_focus_id,
     get_focused_initiative,
@@ -45,6 +46,7 @@ __all__ = [
     "complete_initiative",
     "summarize_initiative",
     # Focus management
+    "get_any_focused_repository",
     "get_focus",
     "get_focus_id",
     "get_focused_initiative",

@@ -19,19 +19,19 @@ from src.configs import get_logger
 from src.external.git import get_current_branch, get_head_commit
 from src.tools.ingest.walker import compute_file_hash
 from src.utils.secret_scrubber import scrub_secrets
+from src.tools.initiatives import get_any_focused_repository, get_focused_initiative
 from src.tools.initiatives.utils import find_initiative, resolve_initiative
 from src.configs.services import CONFIG, get_collection, get_repo_path, get_searcher
 
 if TYPE_CHECKING:
     from src.models import InsightDoc, NoteDoc, SessionSummaryDoc
 
-logger = get_logger("tools.notes")
+logger = get_logger("tools.memory")
 
 
 def _get_focused_initiative_info(repository: str) -> tuple[Optional[str], Optional[str]]:
-    """Get focused initiative ID and name for a repository."""
+    """Get focused initiative (id, name) tuple for resolve_initiative callback."""
     try:
-        from src.tools.initiatives import get_focused_initiative
         focus = get_focused_initiative(repository)
         if focus:
             return focus.get("initiative_id"), focus.get("initiative_name")
@@ -65,23 +65,82 @@ def _resolve_repository(repository: Optional[str]) -> str:
         return repo_path.rstrip("/").split("/")[-1]
 
     # Try to get repository from any focused initiative
-    try:
-        collection = get_collection()
-        # Find any focus document to get its repository
-        focus_results = collection.get(
-            where={"type": "focus"},
-            include=["metadatas"],
-            limit=1,
-        )
-        if focus_results["ids"] and focus_results["metadatas"]:
-            focused_repo = focus_results["metadatas"][0].get("repository")
-            if focused_repo:
-                logger.debug(f"Auto-detected repository from focused initiative: {focused_repo}")
-                return focused_repo
-    except Exception as e:
-        logger.debug(f"Failed to get repository from focused initiative: {e}")
+    focused_repo = get_any_focused_repository()
+    if focused_repo:
+        return focused_repo
 
     return "global"
+
+
+def _build_base_context(
+    repository: Optional[str],
+    initiative: Optional[str],
+) -> dict:
+    """
+    Build common context for save operations.
+
+    Returns dict with:
+        - repo: resolved repository name
+        - collection: ChromaDB collection
+        - repo_path: path to repo (or None)
+        - branch: current git branch
+        - timestamp: ISO timestamp
+        - current_commit: HEAD commit SHA (or None)
+        - initiative_id: resolved initiative ID (or None)
+        - initiative_name: resolved initiative name (or None)
+    """
+    repo = _resolve_repository(repository)
+    collection = get_collection()
+    repo_path = get_repo_path()
+    branch = get_current_branch(repo_path) if repo_path else "unknown"
+    timestamp = datetime.now(timezone.utc).isoformat()
+    current_commit = get_head_commit(repo_path) if repo_path else None
+
+    initiative_id, initiative_name = resolve_initiative(
+        collection, repo, initiative, _get_focused_initiative_info
+    )
+
+    return {
+        "repo": repo,
+        "collection": collection,
+        "repo_path": repo_path,
+        "branch": branch,
+        "timestamp": timestamp,
+        "current_commit": current_commit,
+        "initiative_id": initiative_id,
+        "initiative_name": initiative_name,
+    }
+
+
+def _add_common_metadata(
+    metadata: dict,
+    ctx: dict,
+) -> None:
+    """Add common fields to metadata dict from context."""
+    if ctx["current_commit"]:
+        metadata["created_commit"] = ctx["current_commit"]
+    if ctx["initiative_id"]:
+        metadata["initiative_id"] = ctx["initiative_id"]
+        metadata["initiative_name"] = ctx["initiative_name"] or ""
+
+
+def _compute_file_hashes(files: list[str], repo_path: Optional[str]) -> dict[str, str]:
+    """Compute content hashes for a list of files (for staleness detection)."""
+    file_hashes = {}
+    if not repo_path:
+        return file_hashes
+
+    for file_path in files:
+        full_path = Path(file_path)
+        if not full_path.is_absolute():
+            full_path = Path(repo_path) / file_path
+        if full_path.exists():
+            try:
+                file_hashes[file_path] = compute_file_hash(full_path)
+            except (OSError, IOError) as e:
+                logger.warning(f"Could not hash file {file_path}: {e}")
+
+    return file_hashes
 
 
 def save_memory(
@@ -150,60 +209,34 @@ def _save_note(
     Returns:
         JSON with note ID and save status
     """
-    repo = _resolve_repository(repository)
-
-    logger.info(f"Saving note: title='{title}', repository={repo}")
+    ctx = _build_base_context(repository, initiative)
+    logger.info(f"Saving note: title='{title}', repository={ctx['repo']}")
 
     try:
-        collection = get_collection()
         note_id = f"note:{uuid.uuid4().hex[:8]}"
-        repo_path = get_repo_path()
-        branch = get_current_branch(repo_path) if repo_path else "unknown"
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-        # Get initiative tagging
-        initiative_id, initiative_name = resolve_initiative(
-            collection, repo, initiative, _get_focused_initiative_info
-        )
 
         # Build document text
-        doc_text = ""
-        if title:
-            doc_text = f"{title}\n\n"
+        doc_text = f"{title}\n\n" if title else ""
         doc_text += scrub_secrets(content)
-
-        # Get current commit for staleness tracking
-        current_commit = get_head_commit(repo_path) if repo_path else None
 
         metadata = {
             "type": "note",
             "title": title or "",
             "tags": json.dumps(tags) if tags else "[]",
-            "repository": repo,
-            "branch": branch,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-            # Staleness tracking
-            "verified_at": timestamp,
+            "repository": ctx["repo"],
+            "branch": ctx["branch"],
+            "created_at": ctx["timestamp"],
+            "updated_at": ctx["timestamp"],
+            "verified_at": ctx["timestamp"],
             "status": "active",
         }
+        _add_common_metadata(metadata, ctx)
 
-        # Add commit SHA if available (for staleness detection)
-        if current_commit:
-            metadata["created_commit"] = current_commit
-
-        # Add initiative tagging if available
-        if initiative_id:
-            metadata["initiative_id"] = initiative_id
-            metadata["initiative_name"] = initiative_name or ""
-
-        collection.upsert(
+        ctx["collection"].upsert(
             ids=[note_id],
             documents=[doc_text],
             metadatas=[metadata],
         )
-
-        # Rebuild search index
         get_searcher().build_index()
 
         logger.info(f"Note saved: {note_id}")
@@ -213,11 +246,10 @@ def _save_note(
             "note_id": note_id,
             "title": title,
         }
-
-        if initiative_id:
+        if ctx["initiative_id"]:
             response["initiative"] = {
-                "id": initiative_id,
-                "name": initiative_name,
+                "id": ctx["initiative_id"],
+                "name": ctx["initiative_name"],
             }
 
         return json.dumps(response, indent=2)
@@ -255,65 +287,37 @@ def conclude_session(
     Returns:
         JSON with session summary status
     """
-    repo = _resolve_repository(repository)
-
-    logger.info(f"Saving session summary to Cortex: {len(changed_files)} files, repository={repo}")
+    ctx = _build_base_context(repository, initiative)
+    logger.info(f"Saving session summary to Cortex: {len(changed_files)} files, repository={ctx['repo']}")
 
     try:
-        collection = get_collection()
-
-        # Save the session summary
         doc_id = f"session_summary:{uuid.uuid4().hex[:8]}"
 
-        repo_path = get_repo_path()
-        branch = get_current_branch(repo_path) if repo_path else "unknown"
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-        # Get initiative tagging
-        initiative_id, initiative_name = resolve_initiative(
-            collection, repo, initiative, _get_focused_initiative_info
-        )
-
-        # Get current git commit for staleness tracking
-        current_commit = get_head_commit(repo_path) if repo_path else None
-
-        # Build metadata
         metadata = {
             "type": "session_summary",
-            "repository": repo,
-            "branch": branch,
+            "repository": ctx["repo"],
+            "branch": ctx["branch"],
             "files": json.dumps(changed_files),
-            "created_at": timestamp,
-            "updated_at": timestamp,
-            # Staleness tracking
+            "created_at": ctx["timestamp"],
+            "updated_at": ctx["timestamp"],
             "status": "active",
         }
+        _add_common_metadata(metadata, ctx)
 
-        # Add git commit SHA if available (for staleness detection)
-        if current_commit:
-            metadata["created_commit"] = current_commit
+        # Update initiative's updated_at timestamp if tagged
+        if ctx["initiative_id"]:
+            _update_initiative_timestamp(ctx["collection"], ctx["initiative_id"], ctx["timestamp"])
 
-        # Add initiative tagging if available
-        if initiative_id:
-            metadata["initiative_id"] = initiative_id
-            metadata["initiative_name"] = initiative_name or ""
-
-            # Update initiative's updated_at timestamp
-            _update_initiative_timestamp(collection, initiative_id, timestamp)
-
-        collection.upsert(
+        ctx["collection"].upsert(
             ids=[doc_id],
             documents=[f"Session Summary:\n\n{scrub_secrets(summary)}\n\nChanged files: {', '.join(changed_files)}"],
             metadatas=[metadata],
         )
         logger.debug(f"Saved session summary: {doc_id}")
-
-        # Rebuild search index
         get_searcher().build_index()
 
         logger.info(f"Session summary complete: {doc_id}")
 
-        # Build response
         response = {
             "status": "success",
             "session_id": doc_id,
@@ -321,18 +325,15 @@ def conclude_session(
             "files_recorded": len(changed_files),
         }
 
-        # Add initiative info
-        if initiative_id:
-            # Check for completion signals
+        if ctx["initiative_id"]:
             from src.tools.initiatives import detect_completion_signals
             completion_detected = detect_completion_signals(summary)
 
             response["initiative"] = {
-                "id": initiative_id,
-                "name": initiative_name,
+                "id": ctx["initiative_id"],
+                "name": ctx["initiative_name"],
                 "completion_signal_detected": completion_detected,
             }
-
             if completion_detected:
                 response["initiative"]["prompt"] = "mark_complete"
 
@@ -374,86 +375,51 @@ def _save_insight(
     initiative: Optional[str] = None,
 ) -> str:
     """Save an insight to Cortex memory (internal implementation)."""
-    # Validate files is non-empty
+    # Validate files (kept here for backward-compat aliases like insight_to_cortex)
     if not files:
         return json.dumps({
             "status": "error",
             "error": "files parameter is required and must be a non-empty list",
         })
 
-    repo = _resolve_repository(repository)
-
-    logger.info(f"Saving insight: title='{title}', files={len(files)}, repository={repo}")
+    ctx = _build_base_context(repository, initiative)
+    logger.info(f"Saving insight: title='{title}', files={len(files)}, repository={ctx['repo']}")
 
     try:
-        collection = get_collection()
         insight_id = f"insight:{uuid.uuid4().hex[:8]}"
-        repo_path = get_repo_path()
-        branch = get_current_branch(repo_path) if repo_path else "unknown"
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-        # Get initiative tagging
-        initiative_id, initiative_name = resolve_initiative(
-            collection, repo, initiative, _get_focused_initiative_info
-        )
 
         # Build document text
-        doc_text = ""
-        if title:
-            doc_text = f"{title}\n\n"
+        doc_text = f"{title}\n\n" if title else ""
         doc_text += scrub_secrets(insight)
         doc_text += f"\n\nLinked files: {', '.join(files)}"
 
-        # Get current commit for staleness tracking
-        current_commit = get_head_commit(repo_path) if repo_path else None
-
         # Compute file hashes for linked files (for staleness detection)
-        file_hashes = {}
-        if repo_path:
-            for file_path in files:
-                full_path = Path(file_path)
-                if not full_path.is_absolute():
-                    full_path = Path(repo_path) / file_path
-                if full_path.exists():
-                    try:
-                        file_hashes[file_path] = compute_file_hash(full_path)
-                    except (OSError, IOError) as e:
-                        logger.warning(f"Could not hash file {file_path}: {e}")
+        file_hashes = _compute_file_hashes(files, ctx["repo_path"])
 
         metadata = {
             "type": "insight",
             "title": title or "",
             "files": json.dumps(files),
             "tags": json.dumps(tags) if tags else "[]",
-            "repository": repo,
-            "branch": branch,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-            # Staleness tracking
-            "verified_at": timestamp,
+            "repository": ctx["repo"],
+            "branch": ctx["branch"],
+            "created_at": ctx["timestamp"],
+            "updated_at": ctx["timestamp"],
+            "verified_at": ctx["timestamp"],
             "status": "active",
             "file_hashes": json.dumps(file_hashes),
         }
+        _add_common_metadata(metadata, ctx)
 
-        # Add commit SHA if available (for staleness detection)
-        if current_commit:
-            metadata["created_commit"] = current_commit
+        # Update initiative's updated_at timestamp if tagged
+        if ctx["initiative_id"]:
+            _update_initiative_timestamp(ctx["collection"], ctx["initiative_id"], ctx["timestamp"])
 
-        # Add initiative tagging if available
-        if initiative_id:
-            metadata["initiative_id"] = initiative_id
-            metadata["initiative_name"] = initiative_name or ""
-
-            # Update initiative's updated_at timestamp
-            _update_initiative_timestamp(collection, initiative_id, timestamp)
-
-        collection.upsert(
+        ctx["collection"].upsert(
             ids=[insight_id],
             documents=[doc_text],
             metadatas=[metadata],
         )
-
-        # Rebuild search index
         get_searcher().build_index()
 
         logger.info(f"Insight saved: {insight_id}")
@@ -466,13 +432,12 @@ def _save_insight(
             "files": files,
             "tags": tags or [],
         }
-
-        if initiative_id:
+        if ctx["initiative_id"]:
             response["initiative"] = {
-                "id": initiative_id,
-                "name": initiative_name,
+                "id": ctx["initiative_id"],
+                "name": ctx["initiative_name"],
             }
-            response["initiative_name"] = initiative_name
+            response["initiative_name"] = ctx["initiative_name"]
 
         return json.dumps(response, indent=2)
 
@@ -592,24 +557,15 @@ def validate_insight(
             linked_files = json.loads(meta.get("files", "[]"))
 
             if linked_files and repo_path:
-                new_hashes = {}
-                for file_path in linked_files:
-                    full_path = Path(file_path)
-                    if not full_path.is_absolute():
-                        full_path = Path(repo_path) / file_path
-                    if full_path.exists():
-                        try:
-                            new_hashes[file_path] = compute_file_hash(full_path)
-                        except (OSError, IOError) as e:
-                            logger.warning(f"Could not hash file {file_path}: {e}")
+                new_hashes = _compute_file_hashes(linked_files, repo_path)
+                if new_hashes:
+                    meta["file_hashes"] = json.dumps(new_hashes)
+                    response["file_hashes_refreshed"] = True
 
-                meta["file_hashes"] = json.dumps(new_hashes)
-                response["file_hashes_refreshed"] = True
-
-            # Update commit reference
+            # Update commit reference for validation tracking
             current_commit = get_head_commit(repo_path) if repo_path else None
             if current_commit:
-                meta["created_commit"] = current_commit
+                meta["validated_commit"] = current_commit
 
             logger.info(f"Validated insight as still valid: {insight_id}")
 
@@ -633,8 +589,9 @@ def validate_insight(
         })
 
 
-# --- Backward Compatibility Aliases (for tests and internal use) ---
-# These aliases are NOT exported via __all__ but can be imported directly
+# --- Backward Compatibility Aliases ---
+# Exported via __init__.py for tests and internal use.
+# Prefer save_memory() and conclude_session() for new code.
 
 def insight_to_cortex(
     insight: str,

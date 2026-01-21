@@ -157,3 +157,30 @@ def get_focused_initiative_info(repository: str) -> tuple[Optional[str], Optiona
     if focus:
         return focus.get("initiative_id"), focus.get("initiative_name")
     return None, None
+
+
+def get_any_focused_repository() -> Optional[str]:
+    """
+    Get repository name from any focused initiative.
+
+    Used for auto-detecting repository when none is specified and
+    the current working directory is not a git repo.
+
+    Returns:
+        Repository name from any focus document, or None
+    """
+    try:
+        collection = get_collection()
+        focus_results = collection.get(
+            where={"type": "focus"},
+            include=["metadatas"],
+            limit=1,
+        )
+        if focus_results["ids"] and focus_results["metadatas"]:
+            repo = focus_results["metadatas"][0].get("repository")
+            if repo:
+                logger.debug(f"Auto-detected repository from focused initiative: {repo}")
+                return repo
+    except Exception as e:
+        logger.debug(f"Failed to get repository from focused initiative: {e}")
+    return None

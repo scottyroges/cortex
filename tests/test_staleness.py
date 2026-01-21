@@ -280,7 +280,8 @@ class TestValidateInsight:
              patch("src.tools.memory.memory.get_searcher", return_value=mock_searcher), \
              patch("src.tools.memory.memory.get_current_branch", return_value="main"), \
              patch("src.tools.memory.memory.get_head_commit", return_value="abc123"), \
-             patch("src.tools.initiatives.initiatives.get_collection", return_value=collection):
+             patch("src.tools.initiatives.initiatives.get_collection", return_value=collection), \
+             patch("src.tools.initiatives.focus.get_collection", return_value=collection):
             yield collection
 
     def test_validate_insight_still_valid(self, mock_services):
