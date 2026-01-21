@@ -67,6 +67,9 @@ def generate_tree_structure(
             )
             if result.returncode == 0 and result.stdout.strip():
                 tree_output = result.stdout.strip()
+                # Replace leading '.' with actual directory name for consistency
+                if tree_output.startswith("."):
+                    tree_output = root.name + tree_output[1:]
             else:
                 tree_output = _generate_tree_fallback(root, max_depth, ignore)
         except FileNotFoundError:

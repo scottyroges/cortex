@@ -1034,9 +1034,9 @@ class TestTypeScriptExtractorFunctions:
         self.parser = get_parser()
 
     def test_simple_function(self):
-        source = """
+        source = r"""
 function greet(name: string): string {
-    return \`Hello, \${name}!\`;
+    return `Hello, ${name}!`;
 }
 """
         tree = self.parser.parse(source, "typescript")

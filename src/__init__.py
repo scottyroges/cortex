@@ -5,4 +5,4 @@ This package provides RAG capabilities with ChromaDB, FlashRank reranking,
 and AST-aware chunking.
 """
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"
