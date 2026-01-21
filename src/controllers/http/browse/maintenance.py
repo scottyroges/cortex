@@ -11,12 +11,8 @@ from pydantic import BaseModel
 
 from src.configs import get_logger
 from src.configs.services import get_collection, get_searcher
-from src.storage import (
-    cleanup_orphaned_dependencies,
-    cleanup_orphaned_file_metadata,
-    cleanup_orphaned_insights,
-    purge_by_filters,
-)
+from src.storage import purge_by_filters
+from src.tools.maintenance import run_cleanup
 
 logger = get_logger("http.browse.maintenance")
 
@@ -61,46 +57,28 @@ def browse_cleanup(request: CleanupRequest) -> dict[str, Any]:
         )
 
     collection = get_collection()
+    searcher = get_searcher()
 
-    # Run all cleanup operations
-    file_metadata_result = cleanup_orphaned_file_metadata(
-        collection, request.path, request.repository, dry_run=request.dry_run
-    )
-    insights_result = cleanup_orphaned_insights(
-        collection, request.path, request.repository, dry_run=request.dry_run
-    )
-    dependencies_result = cleanup_orphaned_dependencies(
-        collection, request.path, request.repository, dry_run=request.dry_run
-    )
-
-    # Calculate totals
-    total_orphaned = (
-        file_metadata_result.get("count", 0) +
-        insights_result.get("count", 0) +
-        dependencies_result.get("count", 0)
-    )
-    total_deleted = (
-        file_metadata_result.get("deleted", 0) +
-        insights_result.get("deleted", 0) +
-        dependencies_result.get("deleted", 0)
+    # Use shared orchestrator
+    result = run_cleanup(
+        collection=collection,
+        repo_path=request.path,
+        repository=request.repository,
+        dry_run=request.dry_run,
+        rebuild_index_fn=searcher.build_index,
     )
 
-    # Rebuild search index if we deleted anything
-    if total_deleted > 0:
-        get_searcher().build_index()
-        logger.info("Rebuilt search index after cleanup")
-
-    logger.info(f"Cleanup complete: {total_orphaned} orphaned, {total_deleted} deleted")
+    logger.info(f"Cleanup complete: {result.total_orphaned} orphaned, {result.total_deleted} deleted")
 
     return {
         "success": True,
         "repository": request.repository,
         "dry_run": request.dry_run,
-        "orphaned_file_metadata": file_metadata_result,
-        "orphaned_insights": insights_result,
-        "orphaned_dependencies": dependencies_result,
-        "total_orphaned": total_orphaned,
-        "total_deleted": total_deleted,
+        "orphaned_file_metadata": result.file_metadata,
+        "orphaned_insights": result.insights,
+        "orphaned_dependencies": result.dependencies,
+        "total_orphaned": result.total_orphaned,
+        "total_deleted": result.total_deleted,
     }
 
 

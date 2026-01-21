@@ -17,6 +17,7 @@ from src.storage import (
     get_or_create_collection,
     purge_by_filters,
 )
+from src.tools.maintenance import CleanupResult, run_cleanup
 
 
 class TestCleanupOrphanedFileMetadata:
@@ -511,3 +512,178 @@ class TestPurgeByFilters:
         assert result["filters_applied"]["doc_type"] == "note"
         assert result["filters_applied"]["before_date"] == "2024-01-01"
         assert result["filters_applied"]["after_date"] == "2023-01-01"
+
+
+class TestRunCleanup:
+    """Tests for run_cleanup orchestrator."""
+
+    def test_orchestrates_all_cleanup_operations(self, temp_chroma_client, temp_dir):
+        """Test that run_cleanup calls all three cleanup functions."""
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        # Add orphaned documents of each type
+        collection.add(
+            documents=["Orphaned file_metadata", "Orphaned insight", "Orphaned dependency"],
+            ids=["file_metadata:orphan.py", "insight:orphan", "dep:orphan.py"],
+            metadatas=[
+                {"type": "file_metadata", "repository": "test-repo", "file_path": "orphan.py"},
+                {"type": "insight", "repository": "test-repo", "files": json.dumps(["orphan.py"])},
+                {"type": "dependency", "repository": "test-repo", "file_path": "orphan.py"},
+            ],
+        )
+
+        result = run_cleanup(
+            collection=collection,
+            repo_path=str(temp_dir),
+            repository="test-repo",
+            dry_run=True,
+        )
+
+        assert isinstance(result, CleanupResult)
+        assert result.file_metadata["count"] == 1
+        assert result.insights["count"] == 1
+        assert result.dependencies["count"] == 1
+        assert result.total_orphaned == 3
+        assert result.total_deleted == 0  # dry_run
+        assert result.index_rebuilt is False
+
+    def test_calculates_totals_correctly(self, temp_chroma_client, temp_dir):
+        """Test that totals are calculated correctly across all cleanup types."""
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        # Add multiple orphaned documents of each type
+        collection.add(
+            documents=[
+                "FM 1", "FM 2",
+                "Insight 1", "Insight 2", "Insight 3",
+                "Dep 1",
+            ],
+            ids=[
+                "file_metadata:a.py", "file_metadata:b.py",
+                "insight:1", "insight:2", "insight:3",
+                "dep:c.py",
+            ],
+            metadatas=[
+                {"type": "file_metadata", "repository": "test-repo", "file_path": "a.py"},
+                {"type": "file_metadata", "repository": "test-repo", "file_path": "b.py"},
+                {"type": "insight", "repository": "test-repo", "files": json.dumps(["x.py"])},
+                {"type": "insight", "repository": "test-repo", "files": json.dumps(["y.py"])},
+                {"type": "insight", "repository": "test-repo", "files": json.dumps(["z.py"])},
+                {"type": "dependency", "repository": "test-repo", "file_path": "c.py"},
+            ],
+        )
+
+        result = run_cleanup(
+            collection=collection,
+            repo_path=str(temp_dir),
+            repository="test-repo",
+            dry_run=True,
+        )
+
+        assert result.file_metadata["count"] == 2
+        assert result.insights["count"] == 3
+        assert result.dependencies["count"] == 1
+        assert result.total_orphaned == 6
+        assert result.total_deleted == 0
+
+    def test_rebuilds_index_when_deletions_occur(self, temp_chroma_client, temp_dir):
+        """Test that index is rebuilt when documents are deleted."""
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        collection.add(
+            documents=["Orphan"],
+            ids=["file_metadata:orphan.py"],
+            metadatas=[{"type": "file_metadata", "repository": "test-repo", "file_path": "orphan.py"}],
+        )
+
+        rebuild_called = []
+
+        def mock_rebuild():
+            rebuild_called.append(True)
+
+        result = run_cleanup(
+            collection=collection,
+            repo_path=str(temp_dir),
+            repository="test-repo",
+            dry_run=False,
+            rebuild_index_fn=mock_rebuild,
+        )
+
+        assert result.total_deleted == 1
+        assert result.index_rebuilt is True
+        assert len(rebuild_called) == 1
+
+    def test_does_not_rebuild_index_on_dry_run(self, temp_chroma_client, temp_dir):
+        """Test that index is not rebuilt on dry_run even with orphans."""
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        collection.add(
+            documents=["Orphan"],
+            ids=["file_metadata:orphan.py"],
+            metadatas=[{"type": "file_metadata", "repository": "test-repo", "file_path": "orphan.py"}],
+        )
+
+        rebuild_called = []
+
+        def mock_rebuild():
+            rebuild_called.append(True)
+
+        result = run_cleanup(
+            collection=collection,
+            repo_path=str(temp_dir),
+            repository="test-repo",
+            dry_run=True,
+            rebuild_index_fn=mock_rebuild,
+        )
+
+        assert result.total_orphaned == 1
+        assert result.total_deleted == 0
+        assert result.index_rebuilt is False
+        assert len(rebuild_called) == 0
+
+    def test_does_not_rebuild_when_no_callback(self, temp_chroma_client, temp_dir):
+        """Test that index rebuild is skipped when no callback provided."""
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        collection.add(
+            documents=["Orphan"],
+            ids=["file_metadata:orphan.py"],
+            metadatas=[{"type": "file_metadata", "repository": "test-repo", "file_path": "orphan.py"}],
+        )
+
+        result = run_cleanup(
+            collection=collection,
+            repo_path=str(temp_dir),
+            repository="test-repo",
+            dry_run=False,
+            rebuild_index_fn=None,
+        )
+
+        assert result.total_deleted == 1
+        assert result.index_rebuilt is False
+
+    def test_no_orphans_returns_zeros(self, temp_chroma_client, temp_dir):
+        """Test that result contains zeros when no orphans found."""
+        collection = get_or_create_collection(temp_chroma_client, "cortex_memory")
+
+        # Create actual file
+        test_file = temp_dir / "existing.py"
+        test_file.write_text("print('hello')")
+
+        # Add non-orphaned documents
+        collection.add(
+            documents=["Existing file_metadata"],
+            ids=["file_metadata:existing.py"],
+            metadatas=[{"type": "file_metadata", "repository": "test-repo", "file_path": "existing.py"}],
+        )
+
+        result = run_cleanup(
+            collection=collection,
+            repo_path=str(temp_dir),
+            repository="test-repo",
+            dry_run=True,
+        )
+
+        assert result.total_orphaned == 0
+        assert result.total_deleted == 0
+        assert result.index_rebuilt is False
