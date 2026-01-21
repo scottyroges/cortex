@@ -35,7 +35,7 @@ class TestOrientSession:
         assert result["needs_reindex"] is False
         assert "skeleton" not in result
         assert "tech_stack" not in result
-        assert "active_initiative" not in result
+        assert "focused_initiative" not in result
 
     def test_orient_indexed_project(self, temp_git_repo: Path, temp_chroma_client):
         """Test orient_session on an indexed project."""
@@ -296,8 +296,8 @@ class TestOrientSession:
         assert "tech_stack" in result
         assert result["tech_stack"] == tech_stack_content
 
-    def test_orient_returns_initiative_when_set(self, temp_git_repo: Path):
-        """Test that active_initiative is included in response when set."""
+    def test_orient_returns_focused_initiative_when_set(self, temp_git_repo: Path):
+        """Test that focused_initiative is included in response when set."""
         from src.tools.orient import orient_session
 
         project_name = temp_git_repo.name
@@ -312,13 +312,26 @@ class TestOrientSession:
 
                 if "ids" in kwargs:
                     ids = kwargs["ids"]
-                    if any("initiative" in id for id in ids):
+                    # Focus document lookup
+                    if any("focus" in id for id in ids):
                         return {
-                            "ids": [f"{project_name}:initiative"],
+                            "ids": [f"{project_name}:focus"],
+                            "documents": [],
+                            "metadatas": [{
+                                "initiative_id": "initiative:abc123",
+                                "initiative_name": "Auth System Migration",
+                            }],
+                        }
+                    # Initiative document lookup
+                    if any("initiative:" in id for id in ids):
+                        return {
+                            "ids": ["initiative:abc123"],
                             "documents": ["Auth System Migration"],
                             "metadatas": [{
-                                "initiative_name": "Auth System Migration",
-                                "initiative_status": "Phase 2: In Progress",
+                                "name": "Auth System Migration",
+                                "goal": "Migrate to JWT auth",
+                                "status": "active",
+                                "updated_at": indexed_at,
                             }],
                         }
                     if any("skeleton" in id for id in ids):
@@ -339,9 +352,9 @@ class TestOrientSession:
 
             result = json.loads(orient_session(str(temp_git_repo)))
 
-        assert "active_initiative" in result
-        assert result["active_initiative"]["name"] == "Auth System Migration"
-        assert result["active_initiative"]["status"] == "Phase 2: In Progress"
+        assert "focused_initiative" in result
+        assert result["focused_initiative"]["name"] == "Auth System Migration"
+        assert result["focused_initiative"]["status"] == "active"
 
     def test_orient_handles_error_gracefully(self, temp_git_repo: Path):
         """Test that orient_session handles errors gracefully."""

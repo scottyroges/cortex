@@ -5,7 +5,6 @@ MCP tool for session initialization and staleness detection.
 """
 
 import json
-import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -20,8 +19,20 @@ from src.external.git import (
     get_merge_commits_since,
 )
 from src.configs.services import get_collection
+from src.external.git.subprocess_utils import git_single_line
 
 logger = get_logger("tools.orient")
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Threshold for significant file count change (triggers reindex suggestion)
+FILE_COUNT_CHANGE_THRESHOLD = 5
+
+# Recent work defaults for orient_session summary
+RECENT_WORK_DAYS = 7
+RECENT_WORK_LIMIT = 5
 
 
 # =============================================================================
@@ -152,7 +163,7 @@ class StalenessDetector:
         """Signal 4: Significant file count change."""
         current_file_count = count_tracked_files(self.project_path)
         file_diff = abs(current_file_count - self.indexed_file_count)
-        if file_diff > 5:  # Threshold for significant change
+        if file_diff > FILE_COUNT_CHANGE_THRESHOLD:
             result.needs_reindex = True
             result.reasons.append(
                 f"File count changed: {self.indexed_file_count} -> {current_file_count}"
@@ -248,25 +259,6 @@ class RepositoryContext:
 
         return None
 
-    def fetch_initiative_legacy(self) -> Optional[dict]:
-        """Fetch active initiative from collection (legacy format)."""
-        try:
-            initiative_id = f"{self.repo_name}:initiative"
-            result = self.collection.get(
-                ids=[initiative_id],
-                include=["documents", "metadatas"],
-            )
-            if result["documents"]:
-                meta = result["metadatas"][0]
-                return {
-                    "name": meta.get("initiative_name", ""),
-                    "status": meta.get("initiative_status", ""),
-                }
-        except Exception as e:
-            logger.warning(f"Failed to fetch initiative: {e}")
-
-        return None
-
     def fetch_focused_initiative(self) -> Optional[dict]:
         """Fetch focused initiative with stale detection."""
         try:
@@ -349,7 +341,7 @@ class RepositoryContext:
 
         return []
 
-    def fetch_recent_work(self, days: int = 7, limit: int = 5) -> list[str]:
+    def fetch_recent_work(self, days: int = RECENT_WORK_DAYS, limit: int = RECENT_WORK_LIMIT) -> list[str]:
         """Fetch brief highlights of recent work (session summaries/notes)."""
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -431,19 +423,7 @@ def check_version_updates(project_path: str) -> dict[str, Any]:
         )
 
         # Get local HEAD for comparison
-        local_head = None
-        try:
-            proc_result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=project_path,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if proc_result.returncode == 0:
-                local_head = proc_result.stdout.strip()
-        except Exception:
-            pass
+        local_head = git_single_line(["rev-parse", "HEAD"], project_path)
 
         update_info = check_for_updates(local_head=local_head)
         if update_info.get("update_available"):
@@ -524,11 +504,6 @@ def orient_session(project_path: str) -> str:
         active_initiatives = context.fetch_active_initiatives()
         recent_work = context.fetch_recent_work()
 
-        # Fallback to legacy initiative if no new-format initiatives
-        legacy_initiative = None
-        if not focused_initiative and not active_initiatives:
-            legacy_initiative = context.fetch_initiative_legacy()
-
         # Get last indexed timestamp from skeleton (updated_at)
         last_indexed = skeleton_data.get("updated_at") if skeleton_data else None
 
@@ -564,9 +539,6 @@ def orient_session(project_path: str) -> str:
 
         if active_initiatives:
             response["active_initiatives"] = active_initiatives
-
-        if legacy_initiative:
-            response["active_initiative"] = legacy_initiative
 
         # Add version/update info
         version_info = check_version_updates(project_path)
