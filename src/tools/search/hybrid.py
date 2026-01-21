@@ -4,6 +4,7 @@ Hybrid Search with RRF Fusion
 Combines vector search and BM25 using Reciprocal Rank Fusion.
 """
 
+import json
 import time
 from threading import RLock
 from typing import Any, Optional
@@ -14,6 +15,14 @@ from src.configs import get_logger
 from src.tools.search.bm25 import BM25Index
 
 logger = get_logger("search.hybrid")
+
+
+def _filter_hash(where_filter: Optional[dict]) -> str:
+    """Create a hashable representation of a filter for comparison."""
+    if where_filter is None:
+        return ""
+    # Sort keys for consistent hashing
+    return json.dumps(where_filter, sort_keys=True)
 
 
 def reciprocal_rank_fusion(
@@ -68,12 +77,14 @@ class HybridSearcher:
         self.collection = collection
         self.bm25_index = BM25Index()
         self._index_built = False
+        self._index_filter_hash = ""
         self._index_lock = RLock()
 
     def invalidate(self) -> None:
         """Mark the BM25 index as stale, requiring rebuild on next search."""
         with self._index_lock:
             self._index_built = False
+            self._index_filter_hash = ""
 
     def build_index(self, where_filter: Optional[dict] = None) -> None:
         """
@@ -85,6 +96,7 @@ class HybridSearcher:
         with self._index_lock:
             self.bm25_index.build_from_collection(self.collection, where_filter)
             self._index_built = True
+            self._index_filter_hash = _filter_hash(where_filter)
 
     def search(
         self,
@@ -105,11 +117,16 @@ class HybridSearcher:
         Returns:
             Combined results with RRF scores
         """
-        # Rebuild index if needed (thread-safe check)
+        # Rebuild index if needed or filter changed (thread-safe check)
+        current_filter_hash = _filter_hash(where_filter)
         with self._index_lock:
-            if rebuild_index or not self._index_built:
+            filter_changed = current_filter_hash != self._index_filter_hash
+            if rebuild_index or not self._index_built or filter_changed:
+                if filter_changed:
+                    logger.debug("BM25 index rebuild: filter changed")
                 self.bm25_index.build_from_collection(self.collection, where_filter)
                 self._index_built = True
+                self._index_filter_hash = current_filter_hash
 
         # Vector search
         vector_start = time.time()

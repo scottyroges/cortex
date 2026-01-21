@@ -46,7 +46,8 @@ def apply_recency_boost(
     for result in results:
         meta = result.get("meta", {})
         doc_type = meta.get("type", "")
-        original_score = result.get("rerank_score", 0)
+        # Use boosted_score if already set (e.g., by type boost), otherwise rerank_score
+        original_score = result.get("boosted_score", result.get("rerank_score", 0))
 
         # Only boost specified document types
         if doc_type not in boost_types:

@@ -437,9 +437,9 @@ class TestOrientWithInitiatives:
 class TestInitiativeBoost:
     """Tests for initiative boost logic."""
 
-    def test_apply_initiative_boost_multiplies_score(self):
+    def testapply_initiative_boost_multiplies_score(self):
         """Test that boost multiplies score by factor."""
-        from src.tools.search.search import _apply_initiative_boost
+        from src.tools.search.filters import apply_initiative_boost
 
         results = [
             {"text": "doc1", "rerank_score": 0.8, "meta": {"initiative_id": "initiative:abc123"}},
@@ -447,7 +447,7 @@ class TestInitiativeBoost:
             {"text": "doc3", "rerank_score": 0.6, "meta": {}},
         ]
 
-        boosted = _apply_initiative_boost(results, "initiative:abc123", boost_factor=1.3)
+        boosted = apply_initiative_boost(results, "initiative:abc123", boost_factor=1.3)
 
         # First result should have boosted score
         assert boosted[0]["boosted_score"] == pytest.approx(0.8 * 1.3, rel=1e-3)
@@ -457,9 +457,9 @@ class TestInitiativeBoost:
         assert "initiative_boost" not in boosted[1]
         assert "initiative_boost" not in boosted[2]
 
-    def test_apply_initiative_boost_reorders_results(self):
+    def testapply_initiative_boost_reorders_results(self):
         """Test that boost can reorder results."""
-        from src.tools.search.search import _apply_initiative_boost
+        from src.tools.search.filters import apply_initiative_boost
 
         # Lower scored result from focused initiative
         results = [
@@ -467,21 +467,21 @@ class TestInitiativeBoost:
             {"text": "doc2", "rerank_score": 0.75, "meta": {"initiative_id": "initiative:focused"}},
         ]
 
-        boosted = _apply_initiative_boost(results, "initiative:focused", boost_factor=1.3)
+        boosted = apply_initiative_boost(results, "initiative:focused", boost_factor=1.3)
 
         # Boosted result (0.75 * 1.3 = 0.975) should now be first
         assert boosted[0]["meta"]["initiative_id"] == "initiative:focused"
         assert boosted[0]["boosted_score"] == pytest.approx(0.975, rel=1e-3)
 
-    def test_apply_initiative_boost_uses_existing_boosted_score(self):
+    def testapply_initiative_boost_uses_existing_boosted_score(self):
         """Test that boost applies to existing boosted_score if present."""
-        from src.tools.search.search import _apply_initiative_boost
+        from src.tools.search.filters import apply_initiative_boost
 
         results = [
             {"text": "doc1", "rerank_score": 0.8, "boosted_score": 0.85, "meta": {"initiative_id": "initiative:abc"}},
         ]
 
-        boosted = _apply_initiative_boost(results, "initiative:abc", boost_factor=1.3)
+        boosted = apply_initiative_boost(results, "initiative:abc", boost_factor=1.3)
 
         # Should multiply the existing boosted_score, not rerank_score
         assert boosted[0]["boosted_score"] == pytest.approx(0.85 * 1.3, rel=1e-3)
