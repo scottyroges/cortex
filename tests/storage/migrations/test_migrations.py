@@ -254,16 +254,18 @@ class TestVersionCheck:
             assert result["update_available"] is False
 
     def test_check_for_updates_different_commit(self):
-        """Test update check when commits differ."""
+        """Test update check when commits differ (local_head fallback)."""
         from src.tools.orient.version import check_for_updates, clear_version_cache
 
         with patch.dict(os.environ, {"CORTEX_GIT_COMMIT": "abc1234"}):
-            clear_version_cache()
-            result = check_for_updates(local_head="def5678901234")
+            # Mock GHCR check to return None so we fall back to local_head comparison
+            with patch("src.tools.orient.version._check_ghcr_latest", return_value=None):
+                clear_version_cache()
+                result = check_for_updates(local_head="def5678901234")
 
-            assert result["update_available"] is True
-            assert result["check_method"] == "local_head"
-            assert "message" in result
+                assert result["update_available"] is True
+                assert result["check_method"] == "local_head"
+                assert "message" in result
 
     def test_version_cache(self):
         """Test that version check results are cached."""
